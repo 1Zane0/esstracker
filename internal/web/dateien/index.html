@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Esstracker</title>
+<link rel="stylesheet" href="stil.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%23FAFAFA'/><path d='M5 3v4a1.2 1.2 0 0 0 2.4 0V3M6.2 3v10M11 3c-1 0-1.5 1.3-1.5 2.8S10 8 11 8m0-5v10' stroke='%230A0A0B' stroke-width='1.1' fill='none' stroke-linecap='round'/></svg>">
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-heute" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.6v2.4M10.5 1.6v2.4"/></symbol>
+  <symbol id="i-verlauf" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 13.4h12M4.2 13.4V8M7.4 13.4V4.2M10.6 13.4V9.6M13.8 13.4v-3"/></symbol>
+  <symbol id="i-produkte" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2.5 5.2 8 2.4l5.5 2.8v5.6L8 13.6 2.5 10.8z"/><path d="M2.5 5.2 8 8m0 0 5.5-2.8M8 8v5.6"/></symbol>
+  <symbol id="i-raster" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+    <rect x="2" y="2" width="4.4" height="4.4" rx="1"/><rect x="9.6" y="2" width="4.4" height="4.4" rx="1"/>
+    <rect x="2" y="9.6" width="4.4" height="4.4" rx="1"/><rect x="9.6" y="9.6" width="4.4" height="4.4" rx="1"/></symbol>
+  <symbol id="i-handy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="1.6" width="8" height="12.8" rx="2"/><path d="M6.8 12.2h2.4"/></symbol>
+  <symbol id="i-weg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 4.5h10M6.4 4.5V3h3.2v1.5M4.5 4.5l.6 8.2h5.8l.6-8.2"/></symbol>
+  <symbol id="i-ausfuhr" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 10.4V2.6M5 5.6 8 2.6l3 3M2.6 10v2.8a.6.6 0 0 0 .6.6h9.6a.6.6 0 0 0 .6-.6V10"/></symbol>
+  <symbol id="i-funk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.2 6.4a7 7 0 0 1 9.6 0M5.3 8.9a4 4 0 0 1 5.4 0"/><circle cx="8" cy="11.6" r=".9" fill="currentColor" stroke="none"/></symbol>
+</svg>
+
+<div class="huelle">
+
+  <aside class="leiste">
+    <div class="marke">
+      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#FAFAFA"/>
+        <path d="M10 7v7a2.4 2.4 0 0 0 4.8 0V7" stroke="#0A0A0B" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M12.4 7v18" stroke="#0A0A0B" stroke-width="2" stroke-linecap="round"/>
+        <path d="M21.8 7c-1.8 0-2.8 2.4-2.8 5.4s1 4 2.8 4" stroke="#0A0A0B" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M21.8 7v18" stroke="#0A0A0B" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <b>Esstracker</b>
+        <span>Vom Handy auf den Rechner</span>
+      </div>
+    </div>
+
+    <!-- Der Puls ist die einzige Zahl, die man sieht, ohne etwas anzuklicken.
+         Deshalb steht hier genau eine: die Kalorien von heute. -->
+    <div class="puls">
+      <div class="zeile"><span class="gross" id="puls-ist">0</span><span class="von" id="puls-soll">von 2000 kcal</span></div>
+      <div class="balken"><i id="puls-balken" style="width:0"></i></div>
+      <div class="serie" id="puls-rest">noch nichts heute</div>
+    </div>
+
+    <nav id="menue">
+      <button data-seite="heute" aria-current="page"><svg width="16" height="16"><use href="#i-heute"/></svg>Heute<span class="zahl leer" id="zahl-heute"></span></button>
+      <button data-seite="verlauf"><svg width="16" height="16"><use href="#i-verlauf"/></svg>Verlauf</button>
+      <button data-seite="produkte"><svg width="16" height="16"><use href="#i-produkte"/></svg>Produkte<span class="zahl leer" id="zahl-produkte"></span></button>
+      <button data-seite="handy"><svg width="16" height="16"><use href="#i-handy"/></svg>Handy<span class="zahl leer" id="zahl-handy"></span></button>
+    </nav>
+
+    <div class="fuss">
+      <div id="fuss-datum">—</div>
+      <div style="margin-top:6px">Eingetragen wird am Handy.</div>
+    </div>
+  </aside>
+
+  <div class="spalte">
+    <header class="kopf">
+      <h1 id="kopf-titel">Heute</h1>
+      <span class="pfad" id="kopf-pfad"></span>
+      <div class="schub" id="kopf-schub"></div>
+    </header>
+
+    <main class="blatt">
+
+      <section class="seite an" id="seite-heute">
+        <div class="karte">
+          <h2>Heute<span class="zusatz" id="heute-zusatz"></span></h2>
+          <dl class="naehrwerte" id="heute-naehrwerte"></dl>
+        </div>
+
+        <div class="karte">
+          <h2>Gegessen<span class="zusatz" id="heute-anzahl"></span></h2>
+          <div id="heute-liste"></div>
+        </div>
+      </section>
+
+      <section class="seite" id="seite-verlauf">
+        <dl class="reihe vier" id="verlauf-kacheln"></dl>
+
+        <div class="karte" style="margin-top:14px">
+          <h2>Die letzten sieben Tage<span class="zusatz" id="woche-zusatz"></span></h2>
+          <div class="woche" id="woche"></div>
+        </div>
+
+        <div class="karte">
+          <h2>Ein Jahr<span class="zusatz" id="raster-zusatz"></span></h2>
+          <div class="rasterhuelle">
+            <div class="rasterfeld">
+              <div class="monate" id="monate"></div>
+              <div class="rasterkoerper">
+                <div class="wochentage"><span>Mo</span><span></span><span>Mi</span><span></span><span>Fr</span><span></span><span>So</span></div>
+                <div class="raster" id="raster"></div>
+              </div>
+              <div class="legende">
+                weniger <i style="background:var(--stufe0)"></i><i style="background:var(--stufe1)"></i><i style="background:var(--stufe2)"></i><i style="background:var(--stufe3)"></i><i style="background:var(--stufe4)"></i> mehr
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="karte">
+          <h2>Ältere Tage</h2>
+          <div id="verlauf-tage"></div>
+        </div>
+      </section>
+
+      <section class="seite" id="seite-produkte">
+        <header>
+          <p>Alles, was je eingetragen wurde — gebündelt über den Barcode, wo es
+             einen gibt, sonst über Name und Marke. Häufigstes zuerst.</p>
+        </header>
+        <div class="karte">
+          <div id="produkte-liste"></div>
+        </div>
+      </section>
+
+      <section class="seite" id="seite-handy">
+        <header>
+          <p>Die Oberfläche hier hängt an 127.0.0.1 und ist vom Netz aus nicht
+             erreichbar. Nur der Empfang steht im Heimnetz offen, und ein Token
+             bekommt ein Handy ausschließlich, solange unten das Kopplungsfenster
+             offen steht.</p>
+        </header>
+
+        <div class="kopplung" id="kopplung"></div>
+
+        <div class="karte" style="margin-top:14px">
+          <h2>Gekoppelte Geräte<span class="zusatz" id="geraete-zusatz"></span></h2>
+          <div id="geraete-liste"></div>
+        </div>
+
+        <div class="karte">
+          <h2>Tagesziel</h2>
+          <form class="zielfeld" id="form-ziel">
+            <input type="number" name="kcal" min="500" max="20000" step="10" inputmode="numeric">
+            <span class="einheit">kcal pro Tag</span>
+            <button class="knopf" type="submit">Setzen</button>
+          </form>
+          <p style="color:var(--leise);font-size:12.5px;margin:10px 0 0;max-width:62ch">
+            Das Ziel gilt für beide Seiten: das Handy holt es sich bei der
+            nächsten Übertragung. Es bestimmt außerdem die Helligkeit im
+            Jahresraster.
+          </p>
+        </div>
+
+        <div class="karte">
+          <h2>Alle Daten<span class="zusatz" id="ausfuhr-zusatz"></span></h2>
+          <p style="color:var(--gedaempft);margin:0 0 12px;max-width:62ch">
+            Jeder Eintrag mit allen Nährwerten als CSV — Produkt, Marke, Barcode,
+            Menge, Uhrzeit, Energie, Fett, Kohlenhydrate, Zucker, Ballaststoffe,
+            Eiweiß und Salz.
+          </p>
+          <button class="knopf" id="knopf-ausfuhr"><svg width="14" height="14"><use href="#i-ausfuhr"/></svg>Als CSV sichern</button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

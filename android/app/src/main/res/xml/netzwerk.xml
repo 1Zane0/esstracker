@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Der eigene Rechner im Heimnetz hat kein Zertifikat, also laeuft die
+  Uebertragung dorthin ueber einfaches HTTP. Ab Android 9 ist das
+  standardmaessig gesperrt.
+
+  Warum hier trotzdem alles freigegeben ist: die Adresse des Rechners steht
+  erst zur Laufzeit fest — sie kommt aus der Suche im Heimnetz und ist beim
+  naechsten Router eine andere. Ein `<domain>`-Eintrag hilft dabei nicht, denn
+  Android vergleicht dort Hostnamen und einzelne Adressen, keine Netzbereiche;
+  „192.168.0.0" trifft 192.168.178.36 gerade nicht.
+
+  Der Preis ist eng begrenzt, weil die App nur zwei Gegenstellen kennt:
+  Open Food Facts, dort steht das https fest im Quelltext (Datenbank.kt), und
+  den gekoppelten Rechner. Und Rechner.kt laesst ueberhaupt nur Adressen zu,
+  die in einem privaten Netz liegen — diese Pruefung ist der eigentliche
+  Riegel, nicht diese Datei.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

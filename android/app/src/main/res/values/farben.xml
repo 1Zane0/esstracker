@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dieselben Werte wie in stil.css auf dem Rechner. Hier stehen nur die, die
+     das System braucht, bevor Compose zeichnet; der Rest steht in Gestalt.kt. -->
+<resources>
+    <color name="grund">#FF0A0A0B</color>
+</resources>

@@ -1,0 +1,364 @@
+/* Esstracker — Oberflaeche.
+   Schwarz, Weiss, Grau, wie in der Tasklist auf 8788 und im Wachturm auf
+   8787: dieselbe Schrift, dieselben Kanten, dieselben Farbtoken. Drei Fenster
+   nebeneinander sollen nach einem Werkzeug aussehen und nicht nach dreien.
+   Die Helligkeit traegt auch hier die Bedeutung: der Tagesbalken wird heller,
+   je naeher das Ziel kommt, und das Jahresraster zeigt ueber Helligkeit, wie
+   dicht getrackt wurde — ohne dass dafuer eine Legende noetig waere.
+   Schrift kommt aus der Datei nebenan, nicht von einem fremden Server. */
+
+@font-face{
+  font-family:"Outfit";
+  src:url("schrift/outfit.ttf") format("truetype-variations");
+  font-weight:100 900;
+  font-display:swap;
+}
+
+:root{
+  color-scheme:dark;
+
+  --grund:#0A0A0B;
+  --flaeche:#121214;
+  --flaeche-hoch:#1A1A1E;
+  --rahmen:#26262B;
+  --rahmen-hell:#35353D;
+  --tinte:#EDEDF0;
+  --gedaempft:#A0A0AB;
+  --leise:#6E6E7A;
+
+  --akzent:#FAFAFA;
+  --akzent-tief:#D8D8DC;
+  --akzent-schein:rgba(255,255,255,.07);
+
+  /* Die fuenf Stufen des Jahresrasters. Sie laufen ueber Helligkeit, nicht
+     ueber Farbe: der Blick soll die dichten Stellen finden, ohne eine
+     Legende zu lesen. */
+  --stufe0:#17171A;
+  --stufe1:#33333B;
+  --stufe2:#5A5A66;
+  --stufe3:#9C9CA8;
+  --stufe4:#FAFAFA;
+
+  --r-karte:12px;
+  --r-knopf:8px;
+  --schrift:"Outfit",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+
+*{scrollbar-color:var(--rahmen-hell) transparent;scrollbar-width:thin}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:var(--grund)}
+::-webkit-scrollbar-thumb{background:var(--rahmen-hell);border-radius:6px;border:3px solid var(--grund)}
+::-webkit-scrollbar-thumb:hover{background:var(--leise)}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{
+  margin:0;background:var(--grund);color:var(--tinte);
+  font-family:var(--schrift);font-size:14px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;font-size:inherit;cursor:pointer;color:inherit}
+input{font-family:inherit}
+:focus-visible{outline:2px solid var(--akzent);outline-offset:2px;border-radius:4px}
+::selection{background:var(--akzent);color:#0A0A0B}
+a{color:var(--akzent)}
+
+/* ---------- Geruest ---------- */
+
+.huelle{display:grid;grid-template-columns:228px minmax(0,1fr);height:100dvh;overflow:hidden}
+.spalte{display:flex;flex-direction:column;min-width:0;min-height:0}
+
+.leiste{
+  background:var(--flaeche);border-right:1px solid var(--rahmen);
+  padding:20px 14px;display:flex;flex-direction:column;gap:20px;overflow-y:auto;
+}
+.marke{display:flex;align-items:center;gap:10px;padding:0 8px}
+.marke svg{flex:none}
+.marke b{font-size:16px;font-weight:600;letter-spacing:-.02em;display:block}
+.marke span{display:block;font-size:11.5px;color:var(--leise);line-height:1.3}
+
+/* Der Puls ist die einzige Zahl, die man sieht, ohne etwas anzuklicken:
+   wie weit der Tag ist. Deshalb steht er oben und nicht in einer Kachel. */
+.puls{margin:0 6px;padding:13px 14px;border:1px solid var(--rahmen);border-radius:10px;background:var(--grund)}
+.puls .zeile{display:flex;align-items:baseline;gap:6px}
+.puls .gross{font-size:26px;font-weight:600;letter-spacing:-.03em;line-height:1}
+.puls .von{font-size:13px;color:var(--leise)}
+.puls .balken{height:4px;border-radius:2px;background:var(--flaeche-hoch);margin:10px 0 8px;overflow:hidden}
+.puls .balken i{display:block;height:100%;background:var(--akzent);border-radius:2px;transition:width .25s ease}
+.puls .serie{font-size:11.5px;color:var(--gedaempft)}
+.puls .serie b{color:var(--tinte);font-weight:600}
+
+nav{display:flex;flex-direction:column;gap:2px}
+nav button{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r-knopf);
+  color:var(--gedaempft);font-size:13.5px;font-weight:500;text-align:left;
+  border:none;border-left:2px solid transparent;background:transparent;width:100%;
+}
+nav button:hover{background:var(--flaeche-hoch);color:var(--tinte)}
+nav button[aria-current="page"]{background:var(--akzent-schein);color:var(--tinte);border-left-color:var(--akzent)}
+nav button svg{flex:none;opacity:.85}
+nav .zahl{
+  margin-left:auto;font-size:11.5px;font-weight:600;color:var(--gedaempft);
+  background:var(--flaeche-hoch);border-radius:999px;padding:1px 7px;min-width:22px;text-align:center;
+}
+nav button[aria-current="page"] .zahl{background:var(--akzent);color:#0A0A0B}
+nav .zahl.leer{display:none}
+
+.fuss{margin-top:auto;padding:0 10px;font-size:11.5px;color:var(--leise)}
+.fuss kbd{
+  font-family:var(--mono);font-size:10.5px;border:1px solid var(--rahmen-hell);
+  border-radius:4px;padding:0 4px;color:var(--gedaempft);
+}
+
+/* ---------- Kopfzeile ---------- */
+
+.kopf{
+  position:sticky;top:0;z-index:20;background:rgba(10,10,11,.88);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--rahmen);display:flex;align-items:center;gap:14px;
+  padding:0 28px;height:60px;flex:none;
+}
+.kopf h1{font-size:17px;font-weight:600;letter-spacing:-.015em;margin:0}
+.kopf .pfad{color:var(--leise);font-size:13px}
+.kopf .schub{margin-left:auto;display:flex;align-items:center;gap:8px}
+
+/* ---------- Knoepfe ---------- */
+
+.knopf{
+  display:inline-flex;align-items:center;gap:7px;border-radius:var(--r-knopf);
+  border:1px solid var(--rahmen);background:var(--flaeche);color:var(--tinte);
+  padding:7px 13px;font-size:13px;font-weight:500;
+}
+.knopf:hover{background:var(--flaeche-hoch);border-color:var(--rahmen-hell)}
+.knopf:disabled{opacity:.5;cursor:not-allowed}
+.knopf.haupt{background:var(--akzent);border-color:var(--akzent);color:#0A0A0B;font-weight:600}
+.knopf.haupt:hover{background:var(--akzent-tief);border-color:var(--akzent-tief)}
+.knopf.leise{border-color:transparent;background:transparent;color:var(--leise);padding:5px 7px}
+.knopf.leise:hover{background:var(--flaeche-hoch);color:var(--tinte)}
+.knopf.gefahr:hover{border-color:var(--stufe4);color:var(--stufe4)}
+.knopf.klein{padding:4px 9px;font-size:12px}
+
+/* ---------- Flaeche ---------- */
+
+.blatt{padding:24px 28px 60px;max-width:1180px;flex:1;min-height:0;overflow-y:auto}
+.seite{display:none}
+.seite.an{display:block}
+.seite>header{margin-bottom:18px}
+.seite>header p{color:var(--gedaempft);margin:4px 0 0;max-width:70ch}
+
+.karte{background:var(--flaeche);border:1px solid var(--rahmen);border-radius:var(--r-karte);padding:16px 18px}
+.karte+.karte{margin-top:14px}
+.karte>h2{font-size:13.5px;font-weight:600;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.karte>h2 .zusatz{margin-left:auto;font-size:12px;font-weight:400;color:var(--leise)}
+
+.reihe{display:grid;gap:14px}
+.reihe.vier{grid-template-columns:repeat(4,minmax(0,1fr))}
+.reihe.fuenf{grid-template-columns:repeat(5,minmax(0,1fr))}
+
+.kachel{background:var(--flaeche);border:1px solid var(--rahmen);border-radius:var(--r-karte);padding:15px 17px}
+.kachel dt{font-size:12px;color:var(--gedaempft);font-weight:500}
+.kachel dd{margin:6px 0 0;font-size:30px;font-weight:600;letter-spacing:-.03em;line-height:1}
+.kachel small{display:block;margin-top:6px;font-size:11.5px;color:var(--leise)}
+
+.leer{color:var(--leise);font-size:13px;padding:10px 2px}
+
+/* ---------- Eintraege ---------- */
+
+/* Nach Mahlzeit gebuendelt, nicht nach Uhrzeit sortiert durchlaufend: beim
+   Blick auf den Tag sucht man „was war zum Mittag", nicht „was war um 12:40". */
+.mahlzeit{margin-bottom:4px}
+.mahlzeit>h3{
+  font-size:11px;font-weight:600;color:var(--leise);letter-spacing:.04em;
+  text-transform:uppercase;margin:16px 0 4px;padding:0 10px;
+  display:flex;align-items:center;gap:8px;
+}
+.mahlzeit:first-child>h3{margin-top:0}
+.mahlzeit>h3 .summe{margin-left:auto;font-variant-numeric:tabular-nums;letter-spacing:0;text-transform:none;font-weight:500}
+
+.eintrag{
+  display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:9px;
+  border:1px solid transparent;
+}
+.eintrag:hover{background:var(--flaeche-hoch)}
+.eintrag .uhr{
+  flex:none;width:38px;font-family:var(--mono);font-size:11px;color:var(--leise);
+  font-variant-numeric:tabular-nums;
+}
+.eintrag .was{flex:1;min-width:0}
+.eintrag .was b{
+  display:block;font-size:14px;font-weight:500;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;
+}
+.eintrag .was span{
+  display:block;font-size:11.5px;color:var(--leise);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;
+}
+/* Die Kalorien stehen rechtsbuendig und mit Tabellenziffern: untereinander
+   soll man sie ueberschlagen koennen, ohne sie zu lesen. */
+.eintrag .kcal{
+  flex:none;text-align:right;min-width:74px;font-variant-numeric:tabular-nums;
+}
+.eintrag .kcal b{font-size:15px;font-weight:600;letter-spacing:-.02em}
+.eintrag .kcal span{font-size:11px;color:var(--leise);margin-left:3px}
+.eintrag .werkzeuge{display:flex;gap:2px;opacity:0;flex:none;width:30px}
+.eintrag:hover .werkzeuge,.eintrag:focus-within .werkzeuge{opacity:1}
+
+/* Der Strich unter einem Eintrag zeigt, welchen Anteil am Tagesziel er hat.
+   Er ersetzt eine Prozentspalte, die niemand lesen wuerde. */
+.eintrag .anteil{
+  position:absolute;left:10px;right:10px;bottom:2px;height:2px;border-radius:1px;
+  background:var(--stufe1);
+}
+.eintrag{position:relative}
+.eintrag .anteil i{display:block;height:100%;background:var(--stufe3);border-radius:1px}
+
+/* ---------- Naehrwerte ---------- */
+
+/* Vier Zahlen, mehr nicht. Der Rest steht in der CSV — hier wuerde eine
+   vollstaendige Tabelle nur davon ablenken, dass die Kalorien die Zahl sind,
+   wegen der das Fenster offen ist. */
+.naehrwerte{display:flex;gap:18px;flex-wrap:wrap}
+.naehrwert{flex:1 1 90px;min-width:90px}
+.naehrwert dt{font-size:11.5px;color:var(--gedaempft);font-weight:500}
+.naehrwert dd{
+  margin:3px 0 0;font-size:19px;font-weight:600;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;line-height:1.15;
+}
+.naehrwert dd small{font-size:12px;font-weight:400;color:var(--leise);margin-left:2px}
+.naehrwert .balken{height:3px;border-radius:2px;background:var(--flaeche-hoch);margin-top:7px;overflow:hidden}
+.naehrwert .balken i{display:block;height:100%;background:var(--stufe2);border-radius:2px}
+
+/* ---------- Woche ---------- */
+
+/* Sieben Balken, Kalendertage — Luecken eingeschlossen. Ein Tag ohne Eintrag
+   ist hier die Aussage, nicht das Fehlen einer. */
+.woche{display:flex;gap:10px;align-items:flex-end;height:120px;padding:0 2px}
+.wochentag{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0}
+.wochentag .saeule{
+  width:100%;background:var(--flaeche-hoch);border-radius:4px;position:relative;
+  height:84px;display:flex;align-items:flex-end;overflow:hidden;
+}
+.wochentag .saeule i{width:100%;background:var(--stufe2);border-radius:4px;transition:height .25s ease}
+.wochentag.heute .saeule i{background:var(--akzent)}
+/* Der Strich ist das Tagesziel. Ohne ihn sagt die Hoehe eines Balkens nichts,
+   weil die Achse sich nach dem hoechsten Tag richtet. */
+.wochentag .saeule .ziellinie{
+  position:absolute;left:0;right:0;height:1px;background:var(--rahmen-hell);
+  border-top:1px dashed var(--leise);border-radius:0;
+}
+.wochentag .tag{font-size:10.5px;color:var(--leise);white-space:nowrap}
+.wochentag.heute .tag{color:var(--tinte);font-weight:600}
+.wochentag .zahl{font-size:11px;color:var(--gedaempft);font-variant-numeric:tabular-nums}
+
+/* ---------- Jahresraster ---------- */
+
+.rasterhuelle{overflow-x:auto;padding-bottom:4px}
+.rasterfeld{display:inline-flex;flex-direction:column;gap:5px;min-width:min-content}
+.monate{
+  display:grid;grid-auto-flow:column;gap:3px;margin-left:30px;
+  font-size:10.5px;color:var(--leise);height:13px;
+}
+.monate span{white-space:nowrap}
+.rasterkoerper{display:flex;gap:5px}
+.wochentage{
+  display:grid;grid-template-rows:repeat(7,11px);gap:3px;width:25px;
+  font-size:10px;color:var(--leise);align-items:center;
+}
+.raster{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,11px);gap:3px}
+.raster i{
+  width:11px;height:11px;border-radius:2.5px;background:var(--stufe0);
+  display:block;cursor:default;
+}
+.raster i.s1{background:var(--stufe1)}
+.raster i.s2{background:var(--stufe2)}
+.raster i.s3{background:var(--stufe3)}
+.raster i.s4{background:var(--stufe4)}
+/* Ein Tag ohne Eintrag heisst nicht, dass an dem Tag nichts gegessen wurde —
+   nur, dass nichts eingetragen wurde. Deshalb bleibt er die dunkelste Stufe
+   und bekommt keine eigene Auszeichnung: das Raster zeigt, wie dicht getrackt
+   wurde, und behauptet nichts ueber die Tage dazwischen. */
+.raster i.heute{box-shadow:0 0 0 1.5px var(--gedaempft)}
+.raster i:hover{outline:1px solid var(--akzent);outline-offset:1px}
+
+.legende{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--leise);margin-left:30px}
+.legende i{width:11px;height:11px;border-radius:2.5px;display:block}
+
+/* ---------- Produkte ---------- */
+
+.produkt{
+  display:flex;align-items:center;gap:12px;padding:11px 10px;
+  border-bottom:1px solid var(--rahmen);
+}
+.produkt:last-child{border-bottom:none}
+.produkt .nummer{
+  flex:none;width:22px;text-align:right;font-family:var(--mono);font-size:11px;
+  color:var(--rahmen-hell);
+}
+.produkt .was{flex:1 1 240px;min-width:0}
+.produkt .was b{display:block;font-size:14px;font-weight:500}
+.produkt .was span{display:block;font-size:11.5px;color:var(--leise)}
+.produkt .werte{display:flex;gap:13px;flex:none;font-size:11.5px;color:var(--leise);font-variant-numeric:tabular-nums}
+.produkt .werte div{text-align:right;min-width:52px}
+.produkt .werte b{display:block;color:var(--tinte);font-size:13.5px;font-weight:600}
+
+/* ---------- Handy ---------- */
+
+/* Der Kopplungskasten ist der einzige Ort mit einer Uhr, die runterlaeuft.
+   Das ist Absicht: das Fenster ist offen und damit angreifbar, und das soll
+   man sehen, nicht nachlesen muessen. */
+.kopplung{
+  border:1px solid var(--rahmen-hell);border-radius:var(--r-karte);
+  padding:16px 18px;background:var(--flaeche-hoch);
+}
+.kopplung.offen{border-color:var(--akzent)}
+.kopplung .wort{
+  font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:-.01em;
+  margin:10px 0 2px;
+}
+.kopplung .rest{font-size:12px;color:var(--gedaempft);font-variant-numeric:tabular-nums}
+.kopplung p{margin:8px 0 0;color:var(--gedaempft);max-width:62ch}
+.kopplung ol{margin:10px 0 0;padding-left:20px;color:var(--gedaempft);max-width:62ch}
+.kopplung ol li{margin:3px 0}
+.kopplung .schub{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+
+.adressen{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.adressen code{
+  font-family:var(--mono);font-size:12px;background:var(--grund);
+  border:1px solid var(--rahmen);border-radius:6px;padding:3px 9px;color:var(--gedaempft);
+}
+
+.geraet{
+  display:flex;align-items:center;gap:12px;padding:11px 10px;
+  border-bottom:1px solid var(--rahmen);
+}
+.geraet:last-child{border-bottom:none}
+.geraet .was{flex:1;min-width:0}
+.geraet .was b{display:block;font-size:14px;font-weight:500}
+.geraet .was span{display:block;font-size:11.5px;color:var(--leise);font-family:var(--mono)}
+.geraet .werte{display:flex;gap:13px;flex:none;font-size:11.5px;color:var(--leise);font-variant-numeric:tabular-nums}
+.geraet .werte div{text-align:right;min-width:60px}
+.geraet .werte b{display:block;color:var(--tinte);font-size:13.5px;font-weight:600}
+
+/* ---------- Ziel ---------- */
+
+.zielfeld{display:flex;gap:8px;align-items:center}
+.zielfeld input{
+  width:110px;background:var(--grund);border:1px solid var(--rahmen);
+  border-radius:var(--r-knopf);color:var(--tinte);font-size:14px;padding:9px 12px;
+  font-family:var(--mono);font-variant-numeric:tabular-nums;
+}
+.zielfeld input:focus{border-color:var(--akzent);outline:none}
+.zielfeld .einheit{color:var(--leise);font-size:13px}
+
+/* ---------- Meldung ---------- */
+
+/* Ein Fehler darf hier nicht im Terminal landen — es gibt keins. */
+.meldung{
+  display:flex;align-items:center;gap:12px;
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+  background:var(--flaeche-hoch);border:1px solid var(--rahmen-hell);
+  border-radius:10px;padding:9px 15px;font-size:13px;z-index:60;
+  box-shadow:0 8px 26px rgba(0,0,0,.55);max-width:70ch;
+}
+.meldung button{flex:none}

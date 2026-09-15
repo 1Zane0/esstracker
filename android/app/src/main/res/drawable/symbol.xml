@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gabel und Loeffel, schwarz auf weiss — dasselbe Zeichen wie im Fenster
+     auf dem Rechner und in der Seitenleiste dort. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path
+        android:pathData="M38,28 L38,48 A7,7 0 0,0 52,48 L52,28"
+        android:strokeColor="#0A0A0B" android:strokeWidth="6"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M45,28 L45,80"
+        android:strokeColor="#0A0A0B" android:strokeWidth="6"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M68,28 C62,28 59,35 59,44 C59,51 62,55 68,55"
+        android:strokeColor="#0A0A0B" android:strokeWidth="6"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path
+        android:pathData="M68,28 L68,80"
+        android:strokeColor="#0A0A0B" android:strokeWidth="6"
+        android:strokeLineCap="round" />
+</vector>

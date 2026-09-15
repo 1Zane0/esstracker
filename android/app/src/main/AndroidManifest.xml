@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Netz fuer zweierlei: die Produktdatenbank im Internet und den eigenen
+         Rechner im Heimnetz. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!--
+      Ab Android 16 reicht INTERNET nicht mehr, um den eigenen Rechner im
+      Heimnetz zu erreichen: Adressen aus privaten Netzen liegen seitdem hinter
+      einer eigenen, vom Menschen zu erteilenden Erlaubnis. Ohne sie laeuft
+      jede Verbindung dorthin in einen Zeitablauf — ohne Fehlermeldung, die den
+      Grund nennt.
+
+      Fuer diese App ist das die zentrale Erlaubnis: die Uebertragung zum
+      Rechner IST lokaler Netzverkehr. Auf aelteren Fassungen kennt das System
+      sie nicht und ueberliest sie.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
+    <!-- Die Kamera ist kein Muss: wer nicht scannen will, sucht nach dem Namen
+         oder tippt den Strichcode ein. Ohne `required=false` liesse sich die
+         App auf einem Geraet ohne Kamera gar nicht erst installieren. -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
+    <application
+        android:label="Esstracker"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Esstracker"
+        android:networkSecurityConfig="@xml/netzwerk">
+
+        <activity
+            android:name=".Haupt"
+            android:exported="true"
+            android:label="Esstracker"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

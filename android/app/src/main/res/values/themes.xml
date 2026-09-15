@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Das Thema traegt nur, was vor dem ersten Compose-Bild sichtbar ist: der
+      Hintergrund beim Start und die Farbe der Systemleisten. Alles andere
+      steht in Gestalt.kt.
+
+      Dunkel ist hier keine Vorliebe, sondern Teil des Entwurfs — die
+      Oberflaeche hat nur eine Fassung, genau wie die auf dem Rechner.
+    -->
+    <style name="Theme.Esstracker" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/grund</item>
+        <item name="android:statusBarColor">@color/grund</item>
+        <item name="android:navigationBarColor">@color/grund</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

@@ -1,0 +1,10 @@
+# Das Binary wird gebaut, nicht abgelegt.
+esstracker
+*.apk
+*.csv
+
+# Android
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties

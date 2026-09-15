@@ -1,0 +1,10 @@
+# Brücke von 4.0 auf 4.1.
+#
+# webview_go verlangt in seiner cgo-Zeile fest "webkit2gtk-4.0". Arch liefert
+# seit Jahren nur noch 4.1 — derselbe C-API-Stand, der Unterschied liegt in
+# libsoup (2 gegen 3), also unterhalb dessen, was hier benutzt wird. Diese
+# Datei leitet den Namen weiter, statt das fremde Paket zu patchen.
+Name: WebKitGTK
+Description: Shim auf webkit2gtk-4.1
+Version: 4.0
+Requires: webkit2gtk-4.1
