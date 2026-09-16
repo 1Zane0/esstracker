@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/1Zane0/esstracker/internal/aufnahme"
+	"github.com/1Zane0/esstracker/internal/ki"
 	"github.com/1Zane0/esstracker/internal/tagebuch"
 )
 
@@ -30,10 +31,13 @@ var dateien embed.FS
 type Dienst struct {
 	Buch    *tagebuch.Buch
 	Empfang *aufnahme.Dienst
+	Berater *ki.Berater
 }
 
 // Neu baut den Dienst.
-func Neu(b *tagebuch.Buch, e *aufnahme.Dienst) *Dienst { return &Dienst{Buch: b, Empfang: e} }
+func Neu(b *tagebuch.Buch, e *aufnahme.Dienst, k *ki.Berater) *Dienst {
+	return &Dienst{Buch: b, Empfang: e, Berater: k}
+}
 
 // Handler verdrahtet alle Pfade.
 func (d *Dienst) Handler() http.Handler {
@@ -47,6 +51,12 @@ func (d *Dienst) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/geraet/{id}", d.geraetLoesen)
 	mux.HandleFunc("GET /api/ausfuhr.csv", d.ausfuhr)
 	mux.HandleFunc("POST /api/ausfuhr", d.ausfuhrDatei)
+
+	mux.HandleFunc("GET /api/ki", d.kiLesen)
+	mux.HandleFunc("POST /api/ki/frage", d.kiFragen)
+	mux.HandleFunc("POST /api/ki/neu", d.kiNeu)
+	mux.HandleFunc("POST /api/ki/vergessen", d.kiVergessen)
+	mux.HandleFunc("POST /api/ki/abbruch", d.kiAbbruch)
 
 	unter, err := fs.Sub(dateien, "dateien")
 	if err != nil {

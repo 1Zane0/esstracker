@@ -130,6 +130,8 @@ function zeichne() {
   if (seite === 'verlauf') verlauf();
   if (seite === 'produkte') produkte();
   if (seite === 'handy') handy();
+  if (seite === 'ki') ki();
+  kopfSchub();
   $('#fuss-datum').textContent = tagLang(stand.heute);
 }
 
@@ -156,6 +158,7 @@ function menue() {
   setzeZahl('#zahl-heute', z.eintraege);
   setzeZahl('#zahl-produkte', stand.produkte.length);
   setzeZahl('#zahl-handy', stand.geraete.length);
+  kiZahl();
 }
 
 function setzeZahl(wahl, n) {
@@ -548,9 +551,490 @@ function mmss(sek) {
   return m + ':' + String(s).padStart(2, '0');
 }
 
+/* ---------- KI ---------- */
+
+/* Der KI-Reiter haengt nicht am Tagebuch-Stand, sondern hat einen eigenen:
+ * er aendert sich in ganz anderem Takt. Waehrend eine Antwort entsteht, wird
+ * im Sekundentakt nachgefragt, und dabei jedes Mal Jahresraster und
+ * Produktliste mitzubauen waere Arbeit ohne Ertrag.
+ *
+ * Hier wird ausserdem als Einziges Markdown gezeichnet — aber weiter mit
+ * createElement. Der Text kommt zwar von Claude und nicht von einem Handy,
+ * doch er enthaelt Produktnamen aus einer fremden Datenbank, und die sind
+ * genau dasselbe Problem wie nebenan.
+ */
+let kiStand = null;
+let kiUhr = null;       // laeuft nur, solange eine Antwort entsteht
+let kiMarke = '';       // woran erkannt wird, dass sich am Verlauf nichts tat
+let kiStromMarke = '';
+let kopfMarke = '';
+
+const vorschlaege = [
+  'Wie war mein Tag?',
+  'Was fehlt mir heute noch?',
+  'Woher kommen heute die Kalorien?',
+  'Vergleich mit der letzten Woche',
+  'Wo steckt der meiste Zucker?',
+  'Komme ich auf genug Eiweiß?',
+];
+
+async function kiHolen(pfad = '/api/ki', art = 'GET', rumpf) {
+  try {
+    kiStand = await hole(pfad, art, rumpf);
+  } catch (fehler) {
+    melde(fehler.message);
+    return;
+  }
+  kiTakt();
+  kiZahl();
+  kopfSchub();
+  if (seite === 'ki') ki();
+}
+
+// Die Uhr laeuft nur, solange eine Antwort entsteht — dann aber auch auf den
+// anderen Seiten weiter: der Punkt im Menue soll Bescheid sagen, wenn sie da
+// ist, ohne dass jemand danach sieht.
+function kiTakt() {
+  const laeuft = !!(kiStand && kiStand.laeuft);
+  if (laeuft && !kiUhr) kiUhr = setInterval(() => kiHolen(), 900);
+  if (!laeuft && kiUhr) { clearInterval(kiUhr); kiUhr = null; }
+}
+
+function kiZahl() {
+  const k = $('#zahl-ki');
+  const laeuft = !!(kiStand && kiStand.laeuft);
+  k.textContent = laeuft ? '·' : '';
+  k.classList.toggle('leer', !laeuft);
+  k.classList.toggle('laeuft', laeuft);
+}
+
+function ki() {
+  if (!kiStand) {
+    $('#ki-verlauf').replaceChildren(el('div', 'leer', 'Einen Moment …'));
+    return;
+  }
+  kiVerlauf();
+  kiStrom();
+  kiEingabe();
+}
+
+function kiVerlauf() {
+  const nachrichten = (kiStand.gespraech && kiStand.gespraech.nachrichten) || [];
+  const wohin = $('#ki-verlauf');
+
+  // Ohne Marke waere der Verlauf im Sekundentakt neu gebaut: aufgeklappte
+  // Mitschnitte klappten zu und eine markierte Zeile waere jedes Mal weg.
+  const letzte = nachrichten[nachrichten.length - 1];
+  const marke = [nachrichten.length, letzte ? letzte.text.length : 0,
+                 kiStand.laeuft, kiStand.bereit].join('|');
+  if (marke === kiMarke) return;
+
+  // Nur nachrollen, wer ohnehin unten stand. Wer weiter oben liest, soll nicht
+  // von der nächsten Antwort weggerissen werden.
+  const unten = wohin.scrollHeight - wohin.scrollTop - wohin.clientHeight < 90;
+  kiMarke = marke;
+
+  if (!nachrichten.length) {
+    wohin.replaceChildren(kiLeer());
+    return;
+  }
+  const liste = el('div', 'nachrichten');
+  for (const n of nachrichten) liste.appendChild(nachrichtZeile(n));
+  wohin.replaceChildren(liste);
+  if (unten) wohin.scrollTop = wohin.scrollHeight;
+}
+
+function kiLeer() {
+  const k = el('div', 'kileer');
+  k.appendChild(el('h2', null, 'Frag nach dem Tag'));
+  k.appendChild(el('p', null,
+    'Vor jeder Frage geht der Stand des Tagebuchs mit: der heutige Tag mit jedem ' +
+    'Eintrag, die Tage davor als Zeilen. Für alles Ältere liest Claude in ' +
+    'tagebuch.json nach. Ändern kann es nichts — ein Eintrag bleibt, was er ist.'));
+  k.appendChild(el('p', 'klein',
+    'Gerufen wird die angemeldete claude-CLI auf diesem Rechner, nicht die API. ' +
+    'Nach draußen geht dabei die Frage samt Stand — sonst nichts.'));
+
+  if (!kiStand.bereit) {
+    const warnung = el('p', 'klein', kiStand.hinweis);
+    warnung.style.color = 'var(--tinte)';
+    k.appendChild(warnung);
+    return k;
+  }
+
+  const v = el('div', 'vorschlaege');
+  for (const t of vorschlaege) {
+    const b = el('button', null, t);
+    b.type = 'button';
+    b.addEventListener('click', () => { $('#ki-text').value = t; kiSenden(); });
+    v.appendChild(b);
+  }
+  k.appendChild(v);
+  return k;
+}
+
+function nachrichtZeile(n) {
+  if (n.rolle === 'trenner') return el('div', 'trenner', n.text || 'Neue Unterhaltung');
+
+  const k = el('div', 'nachricht ' + (n.rolle === 'du' ? 'du' : 'claude') +
+                                     (n.fehler ? ' fehlgeschlagen' : ''));
+
+  const wer = el('div', 'wer', n.rolle === 'du' ? 'Du' : 'Claude');
+  const zusatz = [];
+  if (n.zeit) zusatz.push(zeitpunkt(n.zeit));
+  if (n.dauer) zusatz.push(n.dauer);
+  if (zusatz.length) wer.appendChild(el('span', 'wann', zusatz.join(' · ')));
+  k.appendChild(wer);
+
+  const inhalt = el('div', 'inhalt');
+  // Die eigene Frage und eine Fehlermeldung stehen wörtlich da. Markdown
+  // gezeichnet wird nur, was Claude geschrieben hat.
+  if (n.rolle === 'du' || n.fehler) inhalt.textContent = n.text;
+  else inhalt.appendChild(markdown(n.text));
+  k.appendChild(inhalt);
+
+  if (n.schritte && n.schritte.length) k.appendChild(mitschnitt(n.schritte));
+  return k;
+}
+
+// mitschnitt haelt nach, was Claude unterwegs getan hat — zugeklappt, damit es
+// nachlesbar ist, ohne im Weg zu stehen.
+function mitschnitt(schritte) {
+  const d = el('details', 'mitschnitt');
+  d.appendChild(el('summary', null,
+    schritte.length + (schritte.length === 1 ? ' Schritt' : ' Schritte')));
+  const strom = el('div', 'strom');
+  for (const s of schritte) strom.appendChild(schrittZeile(s));
+  d.appendChild(strom);
+  return d;
+}
+
+function schrittZeile(s) {
+  if (s.art === 'text') return el('div', 'schritt text', s.titel);
+  const z = el('div', 'schritt ' + (s.art || 'hinweis'));
+  z.appendChild(el('span', 'titel', s.titel));
+  z.appendChild(el('span', 'detail', s.detail || (s.offen ? '…' : '')));
+  return z;
+}
+
+function kiStrom() {
+  const kasten = $('#ki-strom');
+  const lauf = kiStand.lauf;
+  if (!lauf) {
+    kasten.hidden = true;
+    kasten.replaceChildren();
+    kiStromMarke = '';
+    return;
+  }
+  kasten.hidden = false;
+
+  const schritte = lauf.schritte || [];
+  const jetzt = schritte[schritte.length - 1];
+  const sekunden = Math.max(0, Math.round((Date.now() - new Date(lauf.beginn)) / 1000));
+  const marke = [schritte.length, jetzt ? jetzt.titel.length : 0,
+                 jetzt ? jetzt.detail : '', lauf.modell, sekunden].join('|');
+  if (marke === kiStromMarke) return;
+  const unten = kasten.scrollHeight - kasten.scrollTop - kasten.clientHeight < 70;
+  kiStromMarke = marke;
+
+  const kopf = el('div', 'kopfzeile');
+  kopf.appendChild(el('span', 'puls'));
+  kopf.appendChild(el('span', null, lauf.modell || 'claude'));
+  const rechts = [dauer(sekunden)];
+  if (lauf.tokenAus) rechts.push(zahl(lauf.tokenAus) + ' Token');
+  kopf.appendChild(el('span', 'rechts', rechts.join(' · ')));
+
+  const teile = [kopf];
+  if (!schritte.length) teile.push(el('div', 'schritt', 'Claude liest den Tag …'));
+  for (const s of schritte) teile.push(schrittZeile(s));
+  kasten.replaceChildren(...teile);
+  if (unten) kasten.scrollTop = kasten.scrollHeight;
+}
+
+function kiEingabe() {
+  const gesperrt = !!kiStand.laeuft || !kiStand.bereit;
+  $('#ki-text').disabled = gesperrt;
+  $('#ki-senden').disabled = gesperrt;
+  $('#ki-senden').textContent = kiStand.laeuft ? 'läuft …' : 'Senden';
+
+  const h = $('#ki-hinweis');
+  if (!kiStand.bereit) h.textContent = kiStand.hinweis;
+  else if (kiStand.laeuft) h.textContent = 'Claude denkt nach. Abbrechen steht oben rechts.';
+  else h.textContent = 'Enter schickt ab, Umschalt+Enter macht eine neue Zeile.';
+}
+
+async function kiSenden() {
+  const feld = $('#ki-text');
+  const text = feld.value.trim();
+  if (!text) return;
+  if (kiStand && !kiStand.bereit) { melde(kiStand.hinweis); return; }
+
+  feld.value = '';
+  hoeheAnpassen(feld);
+  try {
+    kiStand = await hole('/api/ki/frage', 'POST', { text });
+  } catch (fehler) {
+    // Die Frage hat jemand getippt — sie darf nicht mit dem Fehler verschwinden.
+    feld.value = text;
+    hoeheAnpassen(feld);
+    melde(fehler.message);
+    return;
+  }
+  kiTakt();
+  kiZahl();
+  kopfSchub();
+  ki();
+  feld.focus();
+}
+
+// hoeheAnpassen laesst das Feld mit dem Text wachsen. Eine feste Zeile waere
+// bei einer Frage ueber drei Zeilen ein Guckloch.
+function hoeheAnpassen(feld) {
+  feld.style.height = 'auto';
+  feld.style.height = feld.scrollHeight + 'px';
+}
+
+function dauer(sekunden) {
+  if (sekunden < 60) return sekunden + ' s';
+  return Math.floor(sekunden / 60) + ':' + String(sekunden % 60).padStart(2, '0') + ' min';
+}
+
+function zeitpunkt(rfc) {
+  const d = new Date(rfc);
+  if (isNaN(d)) return '';
+  const uhrzeit = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === new Date().toDateString()) return uhrzeit;
+  return d.getDate() + '.' + (d.getMonth() + 1) + '. ' + uhrzeit;
+}
+
+// kopfSchub fuellt die rechte Seite der Kopfzeile mit dem, was auf dieser
+// Seite zu tun ist. Bisher war sie leer — und der KI-Reiter ist der erste mit
+// Knoepfen, die nicht in eine Karte gehoeren.
+function kopfSchub() {
+  const schub = $('#kopf-schub');
+  const nachrichten = (kiStand && kiStand.gespraech && kiStand.gespraech.nachrichten) || [];
+  const marke = [seite, !!(kiStand && kiStand.laeuft), nachrichten.length > 0].join('|');
+  if (marke === kopfMarke) return;
+  kopfMarke = marke;
+
+  if (seite !== 'ki' || !kiStand) { schub.replaceChildren(); return; }
+
+  const teile = [];
+  if (kiStand.laeuft) {
+    teile.push(kopfknopf('i-stopp', 'Abbrechen', () => kiHolen('/api/ki/abbruch', 'POST')));
+  } else if (nachrichten.length) {
+    teile.push(kopfknopf('i-neu', 'Neue Unterhaltung', () => {
+      kiHolen('/api/ki/neu', 'POST');
+      melde('Claude fängt bei der nächsten Frage von vorn an. Was dasteht, bleibt stehen.');
+    }));
+    teile.push(knopf('i-weg', 'Verlauf löschen', () => {
+      kiHolen('/api/ki/vergessen', 'POST');
+      melde('Verlauf gelöscht. Die Einträge im Tagebuch sind davon nicht betroffen.');
+    }));
+  }
+  schub.replaceChildren(...teile);
+}
+
+function kopfknopf(symbol, text, tat) {
+  const b = el('button', 'knopf');
+  b.type = 'button';
+  b.appendChild(bild(symbol, 13));
+  b.appendChild(document.createTextNode(text));
+  b.addEventListener('click', tat);
+  return b;
+}
+
+/* ---------- Markdown ---------- */
+
+/* Nur so viel, wie in einer Antwort vorkommt: Ueberschriften, Listen,
+ * Tabellen, Code, fett und kursiv. Gebaut wird mit createElement — eine
+ * Zeichenkette an innerHTML zu geben waere hier der eine Ort, an dem der
+ * Grundsatz von oben kippt. */
+
+function markdown(text) {
+  const frag = document.createDocumentFragment();
+  const zeilen = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  let i = 0;
+
+  while (i < zeilen.length) {
+    const z = zeilen[i];
+
+    if (!z.trim()) { i++; continue; }
+
+    // Codeblock: alles darin ist wörtlich, auch die Zeichen, die sonst etwas
+    // bedeuten.
+    if (/^\s*```/.test(z)) {
+      const inhalt = [];
+      i++;
+      while (i < zeilen.length && !/^\s*```/.test(zeilen[i])) inhalt.push(zeilen[i++]);
+      i++;
+      const pre = el('pre');
+      pre.appendChild(el('code', null, inhalt.join('\n')));
+      frag.appendChild(pre);
+      continue;
+    }
+
+    const kopf = z.match(/^\s*(#{1,6})\s+(.*)$/);
+    if (kopf) {
+      // Aus h1 und h2 wird h3: die Überschrift der Seite steht schon oben,
+      // und eine zweite in derselben Größe wäre eine zweite Seite.
+      const h = el('h' + Math.min(6, Math.max(3, kopf[1].length + 1)));
+      h.appendChild(inline(kopf[2].replace(/\s*#+\s*$/, '')));
+      frag.appendChild(h);
+      i++;
+      continue;
+    }
+
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(z)) { frag.appendChild(el('hr')); i++; continue; }
+
+    // Tabelle: Kopfzeile, dann eine Zeile aus Strichen. Ohne die zweite Zeile
+    // ist ein Senkrechtstrich nur ein Senkrechtstrich.
+    if (z.includes('|') && i + 1 < zeilen.length && trennzeile(zeilen[i + 1])) {
+      const kopfzeile = spalten(z);
+      const form = ausrichtung(zeilen[i + 1]);
+      i += 2;
+      const koerper = [];
+      while (i < zeilen.length && zeilen[i].includes('|') && zeilen[i].trim()) koerper.push(spalten(zeilen[i++]));
+      frag.appendChild(tabelle(kopfzeile, form, koerper));
+      continue;
+    }
+
+    if (/^\s*>\s?/.test(z)) {
+      const inhalt = [];
+      while (i < zeilen.length && /^\s*>\s?/.test(zeilen[i])) inhalt.push(zeilen[i++].replace(/^\s*>\s?/, ''));
+      const q = el('blockquote');
+      q.appendChild(markdown(inhalt.join('\n')));
+      frag.appendChild(q);
+      continue;
+    }
+
+    if (punktRegel(z)) {
+      const geordnet = /^\s*\d+[.)]\s/.test(z);
+      const liste = el(geordnet ? 'ol' : 'ul');
+      while (i < zeilen.length) {
+        const zeile = zeilen[i];
+        if (!punktRegel(zeile) || /^\s*\d+[.)]\s/.test(zeile) !== geordnet) break;
+        const teile = [zeile.replace(punktMuster, '')];
+        i++;
+        // Fortsetzungszeilen gehören zum selben Punkt, solange sie eingerückt
+        // sind und keinen neuen beginnen.
+        while (i < zeilen.length && zeilen[i].trim() && !punktRegel(zeilen[i]) &&
+               /^\s{2,}/.test(zeilen[i]) && !/^\s*#{1,6}\s/.test(zeilen[i])) {
+          teile.push(zeilen[i++].trim());
+        }
+        const li = el('li');
+        li.appendChild(inline(teile.join(' ')));
+        liste.appendChild(li);
+      }
+      frag.appendChild(liste);
+      continue;
+    }
+
+    // Absatz: alles bis zur nächsten Leerzeile oder zum nächsten Block.
+    const absatz = [];
+    while (i < zeilen.length && zeilen[i].trim() && !blockBeginn(zeilen[i])) absatz.push(zeilen[i++].trim());
+    if (!absatz.length) { i++; continue; }
+    const p = el('p');
+    p.appendChild(inline(absatz.join(' ')));
+    frag.appendChild(p);
+  }
+  return frag;
+}
+
+const punktMuster = /^\s*(?:[-*+]|\d+[.)])\s+/;
+const punktRegel = (z) => punktMuster.test(z);
+
+function blockBeginn(z) {
+  return punktRegel(z) || /^\s*(#{1,6}\s|>|```)/.test(z) || /^\s*([-*_])(\s*\1){2,}\s*$/.test(z);
+}
+
+function trennzeile(z) {
+  return z.includes('-') && /^[\s|:-]+$/.test(z) && z.includes('|');
+}
+
+function spalten(z) {
+  let s = z.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map((t) => t.trim());
+}
+
+// ausrichtung liest aus der Trennzeile, welche Spalte rechtsbündig steht. Das
+// ist fast immer die mit den Zahlen — und die sollen untereinander stehen.
+function ausrichtung(z) {
+  return spalten(z).map((t) => t.endsWith(':') && !t.startsWith(':'));
+}
+
+function tabelle(kopfzeile, form, koerper) {
+  const t = el('table');
+  const kopf = el('thead');
+  const kz = el('tr');
+  kopfzeile.forEach((text, i) => {
+    const th = el('th', form[i] ? 'zahl' : null);
+    th.appendChild(inline(text));
+    kz.appendChild(th);
+  });
+  kopf.appendChild(kz);
+  t.appendChild(kopf);
+
+  const rumpf = el('tbody');
+  for (const zeile of koerper) {
+    const tr = el('tr');
+    kopfzeile.forEach((_, i) => {
+      const td = el('td', form[i] ? 'zahl' : null);
+      td.appendChild(inline(zeile[i] === undefined ? '' : zeile[i]));
+      tr.appendChild(td);
+    });
+    rumpf.appendChild(tr);
+  }
+  t.appendChild(rumpf);
+  return t;
+}
+
+// inline zeichnet aus, was in einer Zeile steht. Der Code kommt zuerst: was
+// in Rückstrichen steht, ist wörtlich und wird nicht weiter ausgezeichnet.
+function inline(text) {
+  const frag = document.createDocumentFragment();
+  for (const stueck of String(text).split(/(`[^`]+`)/g)) {
+    if (!stueck) continue;
+    if (stueck.length > 2 && stueck.startsWith('`') && stueck.endsWith('`')) {
+      frag.appendChild(el('code', null, stueck.slice(1, -1)));
+      continue;
+    }
+    fett(stueck, frag);
+  }
+  return frag;
+}
+
+function fett(text, wohin) {
+  for (const stueck of text.split(/(\*\*[^*]+\*\*|__[^_]+__)/g)) {
+    if (!stueck) continue;
+    if (/^(\*\*|__)[\s\S]+\1$/.test(stueck)) {
+      const b = el('strong');
+      kursiv(stueck.slice(2, -2), b);
+      wohin.appendChild(b);
+      continue;
+    }
+    kursiv(stueck, wohin);
+  }
+}
+
+// Kursiv nur mit Sternchen: Unterstriche stehen in Dateinamen und in
+// Mahlzeitkürzeln, und die sollen nicht schräg werden.
+function kursiv(text, wohin) {
+  for (const stueck of text.split(/(\*[^*\n]+\*)/g)) {
+    if (!stueck) continue;
+    if (stueck.length > 2 && stueck.startsWith('*') && stueck.endsWith('*')) {
+      wohin.appendChild(el('em', null, stueck.slice(1, -1)));
+      continue;
+    }
+    wohin.appendChild(document.createTextNode(stueck));
+  }
+}
+
 /* ---------- Seiten ---------- */
 
-const titel = { heute: 'Heute', verlauf: 'Verlauf', produkte: 'Produkte', handy: 'Handy' };
+const titel = { heute: 'Heute', verlauf: 'Verlauf', produkte: 'Produkte', handy: 'Handy', ki: 'KI' };
 
 function zeigeSeite(neu) {
   seite = neu;
@@ -560,8 +1044,17 @@ function zeigeSeite(neu) {
     else b.removeAttribute('aria-current');
   }
   $('#kopf-titel').textContent = titel[neu];
-  $('#kopf-pfad').textContent = neu === 'heute' && stand ? tagLang(stand.heute) : '';
+  $('#kopf-pfad').textContent =
+    neu === 'heute' && stand ? tagLang(stand.heute) :
+    neu === 'ki' ? 'Claude, mit dem Tagebuch im Rücken' : '';
   if (neu !== 'handy') { clearInterval(uhr); uhr = null; }
+
+  // Der KI-Reiter rollt selbst; die Seite darunter darf es dann nicht mehr.
+  $('.blatt').classList.toggle('gespraechsseite', neu === 'ki');
+  if (neu === 'ki') {
+    if (!kiStand) kiHolen(); else ki();
+    $('#ki-text').focus();
+  }
   zeichne();
 }
 
@@ -576,6 +1069,16 @@ $('#form-ziel').addEventListener('submit', (e) => {
   e.preventDefault();
   const kcal = Number(e.target.kcal.value);
   laden('/api/ziel', 'POST', { kcal });
+});
+
+$('#form-ki').addEventListener('submit', (e) => { e.preventDefault(); kiSenden(); });
+$('#ki-text').addEventListener('input', (e) => hoeheAnpassen(e.target));
+// Enter schickt ab, Umschalt+Enter macht eine Zeile — wie in jedem Eingabefeld,
+// in das man Saetze tippt. isComposing haelt die Zwischenablage der
+// Tastaturbelegung heraus: waehrend dort ein Zeichen entsteht, ist Enter deren
+// Bestaetigung und nicht unsere.
+$('#ki-text').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); kiSenden(); }
 });
 
 $('#knopf-ausfuhr').addEventListener('click', async () => {
@@ -598,3 +1101,6 @@ setInterval(() => { if (!uhr) laden(); }, 10000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) laden(); });
 
 laden();
+// Einmal auch den KI-Stand: laeuft dort noch eine Antwort aus der letzten
+// Sitzung, soll der Punkt im Menue das sagen, bevor jemand hinsieht.
+kiHolen();

@@ -351,6 +351,156 @@ nav .zahl.leer{display:none}
 .zielfeld input:focus{border-color:var(--akzent);outline:none}
 .zielfeld .einheit{color:var(--leise);font-size:13px}
 
+/* ---------- KI ---------- */
+
+/* Der einzige Reiter, auf dem man schreibt statt liest. Deshalb rollt hier
+   nicht die ganze Seite, sondern nur der Verlauf: das Eingabefeld soll dort
+   bleiben, wo man es zuletzt gesehen hat, auch nach der zwanzigsten Frage. */
+.blatt.gespraechsseite{overflow:hidden;padding-bottom:20px;display:flex;flex-direction:column}
+.blatt.gespraechsseite .seite.an{flex:1;min-height:0;display:flex;flex-direction:column}
+
+.gespraech{display:flex;flex-direction:column;gap:12px;height:100%;min-height:0}
+.gespraech .verlauf{flex:1;min-height:0;overflow-y:auto;padding-right:6px}
+.nachrichten{display:flex;flex-direction:column;gap:20px;padding-bottom:6px}
+
+.nachricht{display:flex;flex-direction:column;gap:6px}
+.nachricht .wer{
+  font-size:10.5px;font-weight:600;color:var(--leise);letter-spacing:.06em;
+  text-transform:uppercase;display:flex;align-items:center;gap:9px;
+}
+.nachricht .wer .wann{font-weight:400;letter-spacing:0;text-transform:none;font-size:11px}
+/* Die Frage steht im Kasten, die Antwort daneben am Strich. Wer den Verlauf
+   ueberfliegt, findet so seine eigenen Worte wieder, ohne zu lesen. */
+.nachricht.du .inhalt{
+  align-self:flex-start;max-width:72ch;white-space:pre-wrap;
+  background:var(--flaeche-hoch);border:1px solid var(--rahmen);
+  border-radius:var(--r-karte);padding:10px 14px;
+}
+.nachricht.claude .inhalt{border-left:2px solid var(--rahmen-hell);padding-left:14px;max-width:82ch}
+.nachricht.fehlgeschlagen .inhalt{
+  border-left-color:var(--stufe4);color:var(--gedaempft);
+  font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;
+}
+
+/* Die Trennmarke einer neuen Unterhaltung. Der Verlauf davor bleibt stehen —
+   er ist ja nicht falsch geworden, nur die Sitzung ist weg. */
+.trenner{
+  display:flex;align-items:center;gap:12px;color:var(--leise);
+  font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;
+}
+.trenner::before,.trenner::after{content:"";flex:1;height:1px;background:var(--rahmen)}
+
+/* Markdown, wie es aus der Antwort kommt. */
+.inhalt{font-size:14px;line-height:1.62}
+.inhalt>:first-child{margin-top:0}
+.inhalt>:last-child{margin-bottom:0}
+.inhalt h3,.inhalt h4,.inhalt h5,.inhalt h6{
+  font-size:12.5px;font-weight:600;margin:17px 0 7px;
+  letter-spacing:.03em;text-transform:uppercase;color:var(--gedaempft);
+}
+.inhalt h4,.inhalt h5,.inhalt h6{text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--tinte)}
+.inhalt p{margin:0 0 10px}
+.inhalt ul,.inhalt ol{margin:0 0 10px;padding-left:20px}
+.inhalt li{margin:3px 0}
+.inhalt li::marker{color:var(--leise)}
+.inhalt strong{font-weight:600;color:#fff}
+.inhalt code{
+  font-family:var(--mono);font-size:.86em;background:var(--flaeche-hoch);
+  border-radius:4px;padding:1px 5px;
+}
+.inhalt pre{
+  background:var(--grund);border:1px solid var(--rahmen);border-radius:8px;
+  padding:11px 13px;overflow-x:auto;margin:0 0 11px;
+}
+.inhalt pre code{background:none;padding:0;font-size:12px;line-height:1.5}
+.inhalt blockquote{margin:0 0 11px;padding-left:13px;border-left:2px solid var(--rahmen);color:var(--gedaempft)}
+.inhalt hr{border:none;border-top:1px solid var(--rahmen);margin:14px 0}
+/* Zahlen rechtsbuendig und mit Tabellenziffern — untereinander soll man sie
+   ueberschlagen koennen, so wie in der Liste auf der ersten Seite. */
+.inhalt table{border-collapse:collapse;margin:0 0 12px;font-size:12.5px;display:block;overflow-x:auto}
+.inhalt th,.inhalt td{border-bottom:1px solid var(--rahmen);padding:5px 14px 5px 0;text-align:left;white-space:nowrap}
+.inhalt th{color:var(--gedaempft);font-weight:600;font-size:11px;letter-spacing:.03em;text-transform:uppercase}
+.inhalt td.zahl,.inhalt th.zahl{text-align:right;font-variant-numeric:tabular-nums}
+.inhalt tr:last-child td{border-bottom:none}
+
+/* ---------- Mitschnitt ---------- */
+
+/* Was gerade passiert, nicht nur dass etwas passiert: derselbe Ereignisstrom,
+   den das Terminal zeigt. */
+.strom{
+  border:1px solid var(--rahmen);border-radius:var(--r-karte);background:var(--flaeche);
+  padding:11px 13px;max-height:30vh;overflow-y:auto;flex:none;
+}
+.strom .kopfzeile{
+  display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--gedaempft);
+  padding-bottom:7px;margin-bottom:7px;border-bottom:1px solid var(--rahmen);
+}
+.strom .kopfzeile .rechts{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--leise)}
+.strom .schritt{padding:2px 0;font-size:12.5px;color:var(--gedaempft)}
+.strom .schritt.ruf,.strom .schritt.fehler,.strom .schritt.hinweis{
+  display:flex;gap:10px;align-items:baseline;font-family:var(--mono);font-size:11.5px;
+}
+.strom .schritt.ruf .titel{color:var(--tinte)}
+.strom .schritt.fehler .titel{color:var(--stufe4)}
+.strom .schritt .detail{color:var(--leise);margin-left:auto;flex:none;white-space:nowrap}
+.strom .schritt.text{white-space:pre-wrap;color:var(--gedaempft);line-height:1.55}
+
+/* Der Punkt schlaegt, solange etwas laeuft. Er ist die einzige Bewegung im
+   Programm und darf deshalb nicht auch noch blinken. */
+.strom .puls{
+  width:7px;height:7px;border-radius:50%;background:var(--akzent);flex:none;
+  animation:schlag 1.4s ease-in-out infinite;
+}
+@keyframes schlag{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.strom .puls{animation:none;opacity:.7}}
+
+nav .zahl.laeuft{background:var(--akzent);color:#0A0A0B;animation:schlag 1.4s ease-in-out infinite}
+
+/* Der Mitschnitt einer fertigen Antwort bleibt zugeklappt: nachlesbar, aber
+   nicht im Weg. */
+.mitschnitt{margin-top:9px}
+.mitschnitt>summary{
+  font-size:11.5px;color:var(--leise);cursor:pointer;list-style:none;
+  display:inline-flex;align-items:center;gap:6px;padding:2px 0;
+}
+.mitschnitt>summary::-webkit-details-marker{display:none}
+.mitschnitt>summary::before{content:"\25B8";font-size:9px}
+.mitschnitt[open]>summary::before{content:"\25BE"}
+.mitschnitt>summary:hover{color:var(--gedaempft)}
+.mitschnitt .strom{margin-top:8px;max-height:240px}
+
+/* ---------- Eingabe ---------- */
+
+.eingabe{
+  display:flex;gap:10px;align-items:flex-end;flex:none;
+  border:1px solid var(--rahmen);border-radius:var(--r-karte);
+  background:var(--flaeche);padding:9px 9px 9px 14px;
+}
+.eingabe:focus-within{border-color:var(--rahmen-hell)}
+.eingabe textarea{
+  flex:1;min-width:0;background:transparent;border:none;resize:none;outline:none;
+  color:var(--tinte);font-family:inherit;font-size:14px;line-height:1.5;
+  padding:6px 0;max-height:26vh;
+}
+.eingabe textarea::placeholder{color:var(--leise)}
+.eingabe textarea:disabled{color:var(--leise)}
+.eingabe .knopf{flex:none}
+
+.hinweisleiste{margin:0;font-size:11.5px;color:var(--leise);flex:none;min-height:17px}
+
+/* ---------- Leerzustand ---------- */
+
+.kileer{max-width:70ch;margin:auto 0;padding:8px 2px}
+.kileer h2{font-size:15px;font-weight:600;margin:0 0 8px;letter-spacing:-.01em}
+.kileer p{color:var(--gedaempft);margin:0 0 6px}
+.kileer p.klein{font-size:12.5px;color:var(--leise)}
+.vorschlaege{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.vorschlaege button{
+  border:1px solid var(--rahmen);background:var(--flaeche);color:var(--gedaempft);
+  border-radius:999px;padding:6px 13px;font-size:12.5px;text-align:left;
+}
+.vorschlaege button:hover{background:var(--flaeche-hoch);color:var(--tinte);border-color:var(--rahmen-hell)}
+
 /* ---------- Meldung ---------- */
 
 /* Ein Fehler darf hier nicht im Terminal landen — es gibt keins. */
