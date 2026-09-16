@@ -1,5 +1,5 @@
 # Das Binary wird gebaut, nicht abgelegt.
-esstracker
+/esstracker
 *.apk
 *.csv
 
