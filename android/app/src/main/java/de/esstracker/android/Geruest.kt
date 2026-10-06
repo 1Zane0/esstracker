@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -43,10 +44,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Das Geruest: unten drei Reiter, darin der jeweilige Bildschirm.
+ * Das Geruest: unten vier Reiter, darin der jeweilige Bildschirm.
  *
- * Drei und nicht mehr. Die App hat einen Tracker, und der braucht: die Zahl
- * von heute, einen Weg, etwas einzutragen, und einen Ort fuer den Rechner.
+ * Drei davon sind der Tracker: die Zahl von heute, ein Weg, etwas
+ * einzutragen, und ein Ort fuer den Rechner. Der vierte ist die
+ * Einkaufsliste — das Einzige hier, das nicht auf diesem Geraet entsteht,
+ * sondern am Rechner geschrieben und hier abgearbeitet wird.
  */
 @Composable
 fun Geruest(zustand: Zustand) {
@@ -102,6 +105,7 @@ fun Geruest(zustand: Zustand) {
             when (zustand.seite) {
                 Seite.Heute -> HeuteBildschirm(zustand)
                 Seite.Erfassen -> ErfassenBildschirm(zustand)
+                Seite.Einkauf -> EinkaufBildschirm(zustand)
                 Seite.Einstellungen -> EinstellungenBildschirm(zustand)
             }
         }
@@ -113,6 +117,7 @@ private fun Leiste(zustand: Zustand) {
     NavigationBar(containerColor = Flaeche, tonalElevation = 0.dp) {
         Reiter(zustand, Seite.Heute, Icons.Outlined.CalendarToday, "Heute")
         Reiter(zustand, Seite.Erfassen, Icons.Outlined.Add, "Eintragen")
+        Reiter(zustand, Seite.Einkauf, Icons.Outlined.ShoppingCart, "Einkauf")
         Reiter(zustand, Seite.Einstellungen, Icons.Outlined.Settings, "Rechner")
     }
 }

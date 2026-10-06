@@ -29,14 +29,16 @@ var dateien embed.FS
 
 // Dienst haelt alles, was die Oberflaeche braucht.
 type Dienst struct {
-	Buch    *tagebuch.Buch
-	Empfang *aufnahme.Dienst
-	Berater *ki.Berater
+	Buch      *tagebuch.Buch
+	Empfang   *aufnahme.Dienst
+	Berater   *ki.Berater
+	Schaetzer *ki.Schaetzer
+	Planer    *ki.Planer
 }
 
 // Neu baut den Dienst.
-func Neu(b *tagebuch.Buch, e *aufnahme.Dienst, k *ki.Berater) *Dienst {
-	return &Dienst{Buch: b, Empfang: e, Berater: k}
+func Neu(b *tagebuch.Buch, e *aufnahme.Dienst, k *ki.Berater, s *ki.Schaetzer, p *ki.Planer) *Dienst {
+	return &Dienst{Buch: b, Empfang: e, Berater: k, Schaetzer: s, Planer: p}
 }
 
 // Handler verdrahtet alle Pfade.
@@ -46,9 +48,23 @@ func (d *Dienst) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stand", d.stand)
 	mux.HandleFunc("POST /api/ziel", d.ziel)
 	mux.HandleFunc("DELETE /api/eintrag/{id}", d.eintragLoeschen)
+	mux.HandleFunc("POST /api/eintrag/{id}/schaetzen", d.eintragSchaetzen)
+	mux.HandleFunc("POST /api/schaetzen", d.schaetzen)
+	mux.HandleFunc("POST /api/schaetzen/abbruch", d.schaetzenAbbruch)
+	mux.HandleFunc("DELETE /api/eigene/{id}", d.eigenesLoeschen)
 	mux.HandleFunc("POST /api/kopplung/auf", d.kopplungAuf)
 	mux.HandleFunc("POST /api/kopplung/zu", d.kopplungZu)
 	mux.HandleFunc("DELETE /api/geraet/{id}", d.geraetLoesen)
+	mux.HandleFunc("POST /api/einkauf/erstellen", d.einkaufErstellen)
+	mux.HandleFunc("POST /api/einkauf/abbruch", d.einkaufAbbruch)
+	mux.HandleFunc("POST /api/einkauf/posten", d.postenAnlegen)
+	mux.HandleFunc("POST /api/einkauf/posten/{id}/haken", d.postenHaken)
+	mux.HandleFunc("POST /api/einkauf/posten/{id}/schritt", d.postenSchritt)
+	mux.HandleFunc("POST /api/einkauf/posten/{id}/menge", d.postenMenge)
+	mux.HandleFunc("DELETE /api/einkauf/posten/{id}", d.postenLoeschen)
+	mux.HandleFunc("POST /api/einkauf/aufraeumen", d.einkaufAufraeumen)
+	mux.HandleFunc("POST /api/einkauf/leeren", d.einkaufLeeren)
+
 	mux.HandleFunc("GET /api/ausfuhr.csv", d.ausfuhr)
 	mux.HandleFunc("POST /api/ausfuhr", d.ausfuhrDatei)
 
@@ -82,6 +98,8 @@ func kopfzeilen(next http.Handler) http.Handler {
 func (d *Dienst) sendeStand(w http.ResponseWriter) {
 	s := d.Buch.Sicht()
 	s.Kopplung = d.Empfang.Stand()
+	s.Schaetzung = d.Schaetzer.Stand()
+	s.Plan = d.Planer.Stand()
 	json.NewEncoder(w).Encode(s)
 }
 
@@ -138,6 +156,31 @@ func (d *Dienst) ziel(w http.ResponseWriter, r *http.Request) {
 
 func (d *Dienst) eintragLoeschen(w http.ResponseWriter, r *http.Request) {
 	d.fertig(w, d.Buch.Loeschen(r.PathValue("id")))
+}
+
+// eintragSchaetzen gibt einen selbst eingetippten Eintrag zum Schaetzen frei —
+// fuer die 1 kcal, die am Handy nur stand, weil das Feld nicht leer bleiben
+// durfte.
+func (d *Dienst) eintragSchaetzen(w http.ResponseWriter, r *http.Request) {
+	if err := d.Buch.Freigeben(r.PathValue("id")); err != nil {
+		fehler(w, http.StatusBadRequest, err)
+		return
+	}
+	d.Schaetzer.Anstossen(true)
+	d.fertig(w, nil)
+}
+
+func (d *Dienst) schaetzen(w http.ResponseWriter, r *http.Request) {
+	d.Schaetzer.Anstossen(true)
+	d.fertig(w, nil)
+}
+
+func (d *Dienst) schaetzenAbbruch(w http.ResponseWriter, r *http.Request) {
+	d.fertig(w, d.Schaetzer.Abbrechen())
+}
+
+func (d *Dienst) eigenesLoeschen(w http.ResponseWriter, r *http.Request) {
+	d.fertig(w, d.Buch.EigenesLoeschen(r.PathValue("id")))
 }
 
 func (d *Dienst) kopplungAuf(w http.ResponseWriter, r *http.Request) {

@@ -62,6 +62,11 @@ type Dienst struct {
 	sperre sync.Mutex
 	bis    time.Time // bis wann das Kopplungsfenster offen ist
 	wort   string    // sichtbares Wort, damit man am Handy erkennt, welcher Rechner antwortet
+
+	// Offen wird gerufen, wenn ein Stapel etwas ohne Naehrwerte brachte.
+	// Der Empfang schaetzt nicht selbst — er sagt nur Bescheid, und die
+	// Antwort ans Handy wartet nicht darauf.
+	Offen func()
 }
 
 // Neu baut den Dienst fuer den Port, auf dem er wirklich lauscht.
@@ -155,12 +160,14 @@ func token() string {
 
 // ---------- HTTP ----------
 
-// Handler verdrahtet die drei Pfade, die es hier draussen gibt.
+// Handler verdrahtet die vier Pfade, die es hier draussen gibt.
 func (d *Dienst) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /hallo", d.hallo)
 	mux.HandleFunc("POST /koppeln", d.koppeln)
 	mux.HandleFunc("POST /aufnahme", d.eintrag)
+	mux.HandleFunc("GET /abgleich", d.abgleich)
+	mux.HandleFunc("POST /einkauf", d.einkauf)
 	return kopfzeilen(mux)
 }
 
@@ -285,7 +292,7 @@ func (d *Dienst) eintrag(w http.ResponseWriter, r *http.Request) {
 	// sonst haengt die Warteschlange des Handys fuer immer.
 	angenommen := make([]string, 0, len(stapel))
 	abgelehnt := map[string]string{}
-	neu := 0
+	neu, offen := 0, false
 	for _, e := range stapel {
 		war, err := d.Buch.Aufnehmen(e, g.ID)
 		switch {
@@ -298,9 +305,13 @@ func (d *Dienst) eintrag(w http.ResponseWriter, r *http.Request) {
 		case war:
 			neu++
 			angenommen = append(angenommen, e.ID)
+			offen = offen || e.Je100.Kcal <= 0
 		default:
 			angenommen = append(angenommen, e.ID)
 		}
+	}
+	if offen && d.Offen != nil {
+		d.Offen()
 	}
 
 	json.NewEncoder(w).Encode(map[string]any{
@@ -309,6 +320,85 @@ func (d *Dienst) eintrag(w http.ResponseWriter, r *http.Request) {
 		"neu":        neu,
 		"ziel":       d.Buch.Tagesziel(),
 	})
+}
+
+// einkauf nimmt die Aenderungen an der Einkaufsliste entgegen, die am Handy
+// entstanden sind: Haken, verstellte Mengen, dazugeschriebene und weggenommene
+// Posten. Zurueck geht die Liste, wie sie danach hier steht.
+//
+// Das ist die eine Tuer, durch die das Handy etwas aendern darf, das nicht sein
+// eigener Eintrag ist — und der Grund dafuer steht in tagebuch/einkauf.go: eine
+// Einkaufsliste wird im Laden abgearbeitet, nicht am Rechner. Gefahrlos bleibt
+// es, weil jede Aenderung ihre Zeit mitbringt und eine aeltere keine juengere
+// ueberschreibt.
+func (d *Dienst) einkauf(w http.ResponseWriter, r *http.Request) {
+	g, ok := d.Buch.GeraetZuToken(bearer(r))
+	if !ok {
+		fehler(w, http.StatusUnauthorized, errors.New("unbekanntes Token — bitte neu koppeln"))
+		return
+	}
+
+	var wu einkaufsWunsch
+	if err := lies(r, &wu); err != nil {
+		fehler(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(wu.Aenderungen) > 500 || len(wu.Neu) > 200 || len(wu.Weg) > 200 {
+		fehler(w, http.StatusBadRequest, errors.New("zu viele Änderungen auf einmal"))
+		return
+	}
+
+	// Reihenfolge mit Absicht: erst weg, dann geaendert, dann neu. Ein Posten,
+	// den das Handy weggenommen hat, soll nicht vorher noch abgehakt werden,
+	// und ein neuer nicht gleich wieder von einer alten Aenderung getroffen.
+	for _, id := range wu.Weg {
+		_ = d.Buch.PostenLoeschen(id)
+	}
+	for _, a := range wu.Aenderungen {
+		// Was der Rechner nicht mehr kennt, wurde dort weggenommen. Das ist
+		// kein Fehler — das Handy erfaehrt es aus der Liste in der Antwort.
+		if a.Erledigt != nil {
+			_ = d.Buch.PostenHaken(a.ID, *a.Erledigt, a.Geaendert, g.ID)
+		}
+		if a.Menge > 0 {
+			_ = d.Buch.PostenMenge(a.ID, a.Menge, a.Einheit, a.Geaendert, g.ID)
+		}
+	}
+	neu, err := d.Buch.PostenAufnehmen(wu.Neu, g.ID)
+	if err != nil {
+		fehler(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"neu":     neu,
+		"einkauf": d.Buch.EinkaufHolen(),
+	})
+}
+
+// einkaufsWunsch ist, was das Handy schickt. Erledigt ist ein Zeiger, damit
+// eine Zeile, an der nur die Menge verstellt wurde, den Haken nicht mitbewegt.
+type einkaufsWunsch struct {
+	Aenderungen []struct {
+		ID        string  `json:"id"`
+		Erledigt  *bool   `json:"erledigt,omitempty"`
+		Menge     float64 `json:"menge,omitempty"`
+		Einheit   string  `json:"einheit,omitempty"`
+		Geaendert string  `json:"geaendert"`
+	} `json:"aenderungen"`
+	Neu []tagebuch.Posten `json:"neu"`
+	Weg []string          `json:"weg"`
+}
+
+// abgleich ist der Rueckweg: die eigene Datenbank, die Einkaufsliste und die
+// Werte, die hier fuer Eintraege der letzten Tage nachgetragen wurden. Nur fuer
+// gekoppelte Geraete — die Liste sagt, was jemand isst.
+func (d *Dienst) abgleich(w http.ResponseWriter, r *http.Request) {
+	if _, ok := d.Buch.GeraetZuToken(bearer(r)); !ok {
+		fehler(w, http.StatusUnauthorized, errors.New("unbekanntes Token — bitte neu koppeln"))
+		return
+	}
+	json.NewEncoder(w).Encode(d.Buch.Abgleichen())
 }
 
 // bearer zieht das Token aus der Kopfzeile.

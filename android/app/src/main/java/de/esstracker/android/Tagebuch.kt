@@ -98,6 +98,32 @@ class Tagebuch(private val zusammenhang: Context) {
         schreib()
     }
 
+    /**
+     * Uebernimmt, was der Rechner fuer Eintraege von hier nachgetragen hat —
+     * vor allem die Naehrwerte, die Claude dort geschaetzt hat. Sonst stuende
+     * am Handy fuer den Doener von heute Mittag weiter ein Fragezeichen, und
+     * die eine Zahl, fuer die man die App aufmacht, waere zu niedrig.
+     *
+     * Gibt zurueck, wie viele Eintraege sich geaendert haben.
+     */
+    fun uebernimm(nachtraege: List<Rechner.Nachtrag>): Int {
+        if (nachtraege.isEmpty()) return 0
+        val nachId = nachtraege.associateBy { it.id }
+        var geaendert = 0
+        eintraege = eintraege.map { e ->
+            val n = nachId[e.id] ?: return@map e
+            val name = n.name.ifEmpty { e.name }
+            if (n.quelle == e.quelle && n.je100 == e.je100 && name == e.name) {
+                e
+            } else {
+                geaendert++
+                e.copy(name = name, je100 = n.je100, quelle = n.quelle)
+            }
+        }
+        if (geaendert > 0) schreib()
+        return geaendert
+    }
+
     fun setzeZiel(kcal: Int) {
         val neu = kcal.coerceIn(500, 20000)
         if (neu == ziel) return
@@ -124,6 +150,8 @@ class Tagebuch(private val zusammenhang: Context) {
     fun warteschlange(): List<Eintrag> = eintraege.filterNot { it.gesendet }
 
     fun vonHeute(): List<Eintrag> = amTag(heute())
+
+    fun offenHeute(): Int = vonHeute().count { it.offen }
 
     fun amTag(tag: String): List<Eintrag> = eintraege.filter { it.tag == tag }
 
@@ -161,6 +189,12 @@ data class Eintrag(
     val gesendet: Boolean = false,
 ) {
     fun kcal(): Double = je100.kcal * menge / 100.0
+
+    /** Ob die Naehrwerte noch fehlen — dann schaetzt sie Claude am Rechner. */
+    val offen: Boolean get() = quelle == "offen"
+
+    /** Ob die Naehrwerte geschaetzt sind, am Rechner oder aus der eigenen Datenbank. */
+    val geschaetzt: Boolean get() = quelle == "ki" || quelle == "eigen"
 
     /** Die Uhrzeit, in der Zone, in der gegessen wurde. */
     fun uhr(): String = try {

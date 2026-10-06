@@ -7,6 +7,10 @@ nichts. Übertragen wird trotzdem alles — Produkt, Marke, Strichcode, Menge,
 Uhrzeit, Mahlzeit und der volle Nährwertsatz. Die vollständige Ansicht steht
 hier auf dem Rechner, und von dort geht alles als CSV weiter.
 
+Einen Weg gibt es in die andere Richtung: die [Einkaufsliste](#einkaufsliste).
+Die schreibt Claude hier aus dem Tagebuch, und abgehakt wird sie am Handy — im
+Laden steht kein Rechner.
+
 Aufbau bewusst wie [tasklist](../tasklist) und [wachturm](../wachturm): Go,
 WebKitGTK-Fenster, Oberfläche per `go:embed`, schwarz-weiß, dieselbe Schrift
 und dieselben Farbtoken. Die App ist auf dieselben Werte gesetzt.
@@ -85,6 +89,18 @@ schon liegt, wird beim zweiten Mal nicht noch einmal angelegt. Genau das macht
 die Warteschlange im Handy gefahrlos: sie schickt nach, bis der Rechner
 bestätigt, und muss dabei nicht mitzählen, was angekommen ist.
 
+Die eine Ausnahme sind die Nährwerte eines offenen Eintrags (siehe
+[Schätzen](#schätzen)). Was gegessen wurde, wann und wie viel, bleibt auch dann
+unberührt, und die Quelle sagt für immer, woher die Zahl kommt:
+
+| Quelle | Bedeutung |
+|---|---|
+| `off` | aus Open Food Facts nachgeschlagen |
+| `hand` | am Handy von der Packung abgetippt |
+| `offen` | nur Name und Menge — zählt mit null, bis geschätzt ist |
+| `ki` | von Claude geschätzt |
+| `eigen` | am Handy aus der eigenen Datenbank gewählt |
+
 Gespeichert sind nur die Nährwerte je 100 g, so wie sie in der Datenbank
 stehen. Was eine Portion ergibt, wird gerechnet. Sonst gäbe es zwei Zahlen,
 die dasselbe behaupten, und irgendwann behaupten sie Verschiedenes.
@@ -101,6 +117,58 @@ Millionen Produkte, viele mit deutschem Namen. Zwei Wege:
 Es ist eine Sammlung von Freiwilligen. Nährwerte fehlen dort öfter, und
 gelegentlich stehen Name und Marke vertauscht. Produkte ganz ohne
 Energieangabe blendet die Suche aus — als Eintrag wären sie wertlos.
+
+## Schätzen
+
+Was in keiner Datenbank steht — der Döner vom Imbiss, das selbst Gekochte —,
+braucht am Handy nur **Name und Menge**. Die Kilokalorien sind freiwillig.
+Früher waren sie Pflicht, und im Tagebuch stand dann „Kulturheidelbeeren,
+1 kcal je 100 g“, weil das Feld nicht leer bleiben durfte.
+
+Ein Eintrag ohne Kilokalorien kommt als `offen` an. Der Rechner ruft dann von
+allein Claude und trägt die geschätzten Nährwerte je 100 g ein; der Eintrag
+zählt danach in Tag, Woche und Raster mit, trägt die Quelle `ki`, und im
+Fenster steht beim Überfahren, worauf die Zahl beruht. Den Namen bringt Claude
+dabei in Form („döner mit soße“ → „Döner mit Soße“); was am Handy stand,
+bleibt unter `schaetzung.nameVorher` liegen.
+
+```sh
+claude -p --model haiku --effort max --output-format json \
+  --system-prompt "…" --no-session-persistence --strict-mcp-config \
+  --tools "" --json-schema '{…}' "<offen>…</offen><bekannt>…</bekannt>"
+```
+
+- **Keine Werkzeuge, kein Verlauf.** Eine Frage, eine Antwort in einem festen
+  Schema. Eingetragen wird vom Programm, nicht von Claude — der Aufruf kann
+  nichts anderes, als Zahlen vorzuschlagen.
+- **Das Programm prüft.** Mehr als 900 kcal je 100 g oder mehr als 100 g
+  Nährstoffe in 100 g zählen nicht; der Eintrag bleibt offen, mit Grund.
+  Kann Claude nicht sagen, was gemeint ist, bleibt er ebenfalls offen.
+- **Was am Handy angegeben war, bleibt.** Nur die leeren Felder werden gefüllt.
+- **Einmal von allein.** Was dabei scheitert (claude nicht angemeldet, Name
+  unklar), wird nicht bei jedem neuen Eintrag wieder versucht. Der Knopf
+  „Jetzt schätzen“ auf der Seite Heute versucht alles noch einmal.
+- **Zum Vergleich** gehen bis zu 40 Lebensmittel mit festen Werten mit
+  (Open Food Facts und frühere Schätzungen, nichts von Hand Getipptes), damit
+  derselbe Döner zweimal dieselbe Zahl bekommt.
+
+Einen Eintrag mit Verlegenheitszahl gibt das Werkzeug neben der Zeile zum
+Schätzen frei; die alten Werte liegen danach unter `vorher`.
+
+### Eigene Datenbank
+
+Jede Schätzung landet außerdem in der **eigenen Datenbank** (`eigene` in
+`tagebuch.json`, im Fenster unter Produkte) — dasselbe Lebensmittel nur einmal,
+über den Strichcode oder über Name und Marke, mit der jüngsten Zahl.
+
+Das Handy holt sie sich über `GET /abgleich` auf dem Empfangsport (mit Token)
+und legt eine Abschrift ab. Die Suche findet sie dann neben Open Food Facts,
+ein Strichcode wird ohne Netz erkannt, und nichts muss zweimal geschätzt
+werden. Derselbe Abgleich bringt die geschätzten Werte der letzten acht Tage
+zurück, damit auch am Handy die Zahl von heute stimmt — und die
+[Einkaufsliste](#einkaufsliste) samt Einheiten und Abteilungen. Abgeglichen
+wird beim Aufschlagen, nach jeder Übertragung und eine knappe halbe Minute nach
+einem offenen Eintrag.
 
 ## Nachfragen
 
@@ -146,9 +214,11 @@ fertigen Antwort bleibt der Mitschnitt zugeklappt liegen — die Werkzeugaufrufe
 nicht der Text, der ohnehin daneben steht.
 
 Eine Frage zur Zeit; zwei an dieselbe Sitzung würden sich in der CLI überholen.
-Die Frist steht bei zehn Minuten, daneben die Notbremse von Hand. Denkstufe
-`max`, und die muss bei jedem Aufruf mit — sie hängt an der Sitzung, nicht am
-Modell. Der Verlauf liegt in `~/.local/share/esstracker/gespraech.json`;
+Die Frist steht bei zehn Minuten, daneben die Notbremse von Hand.
+
+**Modell fest Haiku, Denkstufe `max`** — für das Gespräch wie fürs Schätzen.
+Beides muss bei jedem Aufruf mit, auch beim Fortsetzen: sonst nimmt die CLI,
+was in ihren Einstellungen steht. Der Verlauf liegt in `~/.local/share/esstracker/gespraech.json`;
 **Neue Unterhaltung** wirft nur die Kennung weg, **Verlauf löschen** auch das
 Gezeigte. Die Einträge im Tagebuch bleiben davon in jedem Fall unberührt.
 
@@ -157,10 +227,53 @@ und nicht geschätzt werden dürfen — eine geschätzte Zahl sieht hier aus wie
 eine gemessene. Und dass hier kein Arzt sitzt: einordnen, rechnen, Muster
 zeigen ja; Diagnosen nein.
 
+## Einkaufsliste
+
+Der Reiter **Einkauf** schreibt eine Liste aus dem Tagebuch. Ein Wunsch ins
+Feld — „für drei Tage, viel Eiweiß, kein Schwein" —, und Claude schlägt Posten
+vor: Name, Menge, Abteilung und ein halber Satz, warum. Das Feld darf leer
+bleiben; dann entscheidet allein, was in den letzten Wochen auf dem Teller lag.
+
+```sh
+claude -p --model haiku --effort max --output-format json \
+  --system-prompt "…" --no-session-persistence --strict-mcp-config \
+  --tools "" --json-schema '{…}' "<stand>…</stand><liste>…</liste><auftrag>…"
+```
+
+Dieselbe Machart wie beim [Schätzen](#schätzen): ein Aufruf, keine Werkzeuge,
+kein Verlauf, eine Antwort in einem festen Schema. Eingetragen wird vom
+Programm. Die erlaubten Einheiten und Abteilungen stehen im Schema und kommen
+aus `internal/tagebuch/einkauf.go` — sie können damit nicht neben dem
+herlaufen, was das Programm kennt.
+
+**Mengen, keine Preise.** Was etwas kostet, weiß dieses Programm nicht: es
+kennt das Tagebuch, nicht die Regale, und eine geratene Zahl mit Euro dahinter
+wäre schlechter als keine. Was es gibt, ist eine Menge mit Einheit, und die
+verstellt man mit **+** und **−**. Wie groß ein Schritt ist, sagt die Einheit:
+50 g beim Mehl, ein Stück beim Ei, eine halbe Kiste beim Kilo. Ein Druck auf
+die Zahl macht ein Feld daraus, in dem auch die Einheit zu tauschen ist. Nach
+unten endet es bei einem Schritt — ein Posten mit der Menge null stünde auf der
+Liste und behauptete gleichzeitig, es sei nichts zu holen.
+
+Dazuschreiben geht auf beiden Seiten (Feld unter der Liste, **+**), wegnehmen
+auch (Papierkorb am Rechner, langes Drücken am Handy).
+
+**Die Liste ist der eine Teil des Tagebuchs, der sich ändert.** Ein Eintrag
+beschreibt ein Ereignis und ist unveränderlich; eine Liste, die nicht abnimmt,
+ist keine. Deshalb ist sie auch der eine Weg, auf dem das Handy etwas ändert,
+was nicht sein eigener Eintrag ist — über `POST /einkauf` auf dem Empfangsport.
+
+Gefahrlos bleibt das, weil jede Zeile die Zeit ihrer letzten Änderung trägt:
+**wer zuletzt gedrückt hat, gewinnt — nicht, wessen Nachricht zuletzt ankam.**
+Sonst setzte ein Handy, das eine Stunde ohne Netz im Laden stand, beim
+Nachschicken einen Haken zurück, den hier inzwischen jemand gesetzt hat. Am
+Handy liegen die eigenen Änderungen so lange auf der Abschrift obenauf, bis der
+Rechner sie bestätigt.
+
 ## Die App
 
 `android/` — Kotlin und Compose, dieselben Farbwerte wie die Oberfläche hier.
-Drei Reiter: Heute, Eintragen, Rechner.
+Vier Reiter: Heute, Eintragen, Einkauf, Rechner.
 
 **Ab Android 16 braucht sie `ACCESS_LOCAL_NETWORK`.** `INTERNET` allein reicht
 nicht mehr, um den eigenen Rechner zu erreichen; ohne die Erlaubnis läuft jede
@@ -169,6 +282,10 @@ Die App fragt beim ersten Griff nach dem Rechner danach und sagt, wozu.
 
 Der Strichcode-Leser bringt sein Modell im APK mit: Scannen geht ohne Netz und
 ohne Play-Dienste. Im Supermarkt ist oft beides nicht da.
+
+Findet weder die eigene Datenbank noch Open Food Facts etwas, führt der Weg zu
+**Selbst eintragen** — vorausgefüllt mit dem Suchbegriff oder mit Name und
+Strichcode des gescannten Produkts. Pflicht ist dort nur der Name.
 
 Was aufs Handy gehört, bleibt eine Woche liegen; was älter ist und beim
 Rechner angekommen, wird dort weggeräumt.

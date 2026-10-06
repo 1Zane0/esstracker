@@ -38,34 +38,43 @@ import androidx.compose.ui.unit.sp
  * selten vollstaendig. Ohne diesen Weg bliebe von einem Tag genau das uebrig,
  * was aus einer Packung kam — und das waere ein schiefes Bild.
  *
- * Pflicht ist nur, was zum Zaehlen gebraucht wird: ein Name und die
- * Kilokalorien je 100 g. Alles andere ist freiwillig und bleibt leer, wenn man
- * es nicht weiss. Eine erfundene Zahl waere schlechter als eine fehlende: auf
- * dem Rechner steht sie spaeter neben nachgeschlagenen Werten und sieht
- * genauso sicher aus.
+ * Pflicht ist nur der Name; die Menge folgt auf dem naechsten Bildschirm. Die
+ * Kilokalorien waren frueher auch Pflicht — mit dem Ergebnis, dass im Tagebuch
+ * „Kulturheidelbeeren, 1 kcal je 100 g“ stand, weil das Feld nicht leer
+ * bleiben durfte. Eine erfundene Zahl ist schlechter als eine fehlende.
  *
- * Deshalb wird der Eintrag als `quelle = "hand"` gekennzeichnet und ist in der
- * CSV von nachgeschlagenen zu unterscheiden.
+ * Bleibt das Feld leer, geht der Eintrag als `quelle = "offen"` an den Rechner.
+ * Dort schaetzt Claude die Naehrwerte, und der Eintrag kommt mit ihnen
+ * zurueck; das Lebensmittel steht danach in der eigenen Datenbank und muss nie
+ * wieder geschaetzt werden. Wer die Zahlen von der Packung abliest, traegt sie
+ * ein — dann ist es `quelle = "hand"`, und was dasteht, bleibt stehen.
  */
 @Composable
 fun SelbstBildschirm(zustand: Zustand) {
-    var name by remember { mutableStateOf("") }
-    var marke by remember { mutableStateOf("") }
-    var einheit by remember { mutableStateOf("g") }
-    var kcal by remember { mutableStateOf("") }
+    val vorlage = zustand.vorlage
+    val v = vorlage?.je100
 
-    var fett by remember { mutableStateOf("") }
-    var gesaettigt by remember { mutableStateOf("") }
-    var kohlenhydrate by remember { mutableStateOf("") }
-    var zucker by remember { mutableStateOf("") }
-    var eiweiss by remember { mutableStateOf("") }
-    var ballaststoffe by remember { mutableStateOf("") }
-    var salz by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(vorlage?.name ?: "") }
+    var marke by remember { mutableStateOf(vorlage?.marke ?: "") }
+    var einheit by remember { mutableStateOf(vorlage?.einheit ?: "g") }
+    var kcal by remember { mutableStateOf(v?.kcal.alsFeld()) }
 
-    var mehr by remember { mutableStateOf(false) }
+    var fett by remember { mutableStateOf(v?.fett.alsFeld()) }
+    var gesaettigt by remember { mutableStateOf(v?.gesaettigt.alsFeld()) }
+    var kohlenhydrate by remember { mutableStateOf(v?.kohlenhydrate.alsFeld()) }
+    var zucker by remember { mutableStateOf(v?.zucker.alsFeld()) }
+    var eiweiss by remember { mutableStateOf(v?.eiweiss.alsFeld()) }
+    var ballaststoffe by remember { mutableStateOf(v?.ballaststoffe.alsFeld()) }
+    var salz by remember { mutableStateOf(v?.salz.alsFeld()) }
+
+    // Aufgeklappt, wenn die Vorlage schon etwas mitbringt — sonst stuenden
+    // die Zahlen aus Open Food Facts unsichtbar in einem zugeklappten Block.
+    var mehr by remember {
+        mutableStateOf(listOf(fett, gesaettigt, kohlenhydrate, zucker, eiweiss, ballaststoffe, salz).any { it.isNotEmpty() })
+    }
 
     val kcalZahl = kcal.zahl()
-    val gueltig = name.isNotBlank() && kcalZahl > 0
+    val gueltig = name.isNotBlank()
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -74,7 +83,10 @@ fun SelbstBildschirm(zustand: Zustand) {
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { zustand.selbst = false }) {
+                IconButton(onClick = {
+                    zustand.selbst = false
+                    zustand.vorlage = null
+                }) {
                     Icon(
                         Icons.Outlined.ArrowBack, contentDescription = "Zurück",
                         tint = Gedaempft, modifier = Modifier.size(20.dp),
@@ -86,7 +98,7 @@ fun SelbstBildschirm(zustand: Zustand) {
 
         item {
             Karte {
-                KartenKopf("Was war das?")
+                KartenKopf("Was war das?", vorlage?.barcode?.takeIf { it.isNotEmpty() })
                 Feld(
                     wert = name,
                     aufWert = { name = it },
@@ -107,13 +119,23 @@ fun SelbstBildschirm(zustand: Zustand) {
 
         item {
             Karte {
-                KartenKopf("Energie", "je 100 $einheit · Pflicht")
+                KartenKopf("Energie", "je 100 $einheit · freiwillig")
                 Feld(
                     wert = kcal,
                     aufWert = { kcal = it.nurZahl() },
                     platzhalter = "kcal je 100 $einheit",
                     modifier = Modifier.fillMaxWidth(),
                     tastatur = KeyboardType.Number,
+                )
+                Luft(8)
+                Text(
+                    if (kcalZahl > 0) {
+                        "Steht es auf der Packung, ist das die beste Zahl."
+                    } else {
+                        "Weißt du es nicht, lass es leer: Claude schätzt die Nährwerte am " +
+                            "Rechner und merkt sie sich für das nächste Mal."
+                    },
+                    fontSize = 11.5.sp, color = Leise,
                 )
                 Luft(12)
                 // Gemessen wird in Gramm oder Millilitern. Bei einer Suppe
@@ -170,22 +192,18 @@ fun SelbstBildschirm(zustand: Zustand) {
 
         item {
             Knopf(
-                when {
-                    name.isBlank() -> "Name fehlt"
-                    kcalZahl <= 0 -> "Kilokalorien fehlen"
-                    else -> "Weiter zur Menge"
-                },
+                if (name.isBlank()) "Name fehlt" else "Weiter zur Menge",
                 haupt = true,
                 an = gueltig,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 zustand.gewaehlt = Datenbank.Treffer(
-                    barcode = "",
+                    barcode = vorlage?.barcode ?: "",
                     name = name.trim(),
                     marke = marke.trim(),
                     menge = "",
                     einheit = einheit,
-                    quelle = "hand",
+                    quelle = if (kcalZahl > 0) "hand" else "offen",
                     je100 = Naehrwerte(
                         kcal = kcalZahl,
                         // Kilojoule wird gerechnet, nicht gefragt: der Faktor
@@ -202,6 +220,7 @@ fun SelbstBildschirm(zustand: Zustand) {
                     ),
                 )
                 zustand.selbst = false
+                zustand.vorlage = null
             }
         }
     }
@@ -266,6 +285,13 @@ private fun Umschalter(
  * Zahlentastatur bietet aber oft nur den Punkt an.
  */
 private fun String.nurZahl(): String = filter { it.isDigit() || it == ',' || it == '.' }.take(7)
+
+/** Schreibt eine Zahl aus der Vorlage ins Feld — eine Null bleibt ein leeres Feld. */
+private fun Double?.alsFeld(): String = when {
+    this == null || this <= 0.0 -> ""
+    this % 1.0 == 0.0 -> toLong().toString()
+    else -> toString().replace('.', ',')
+}
 
 /** Liest ein Feld als Zahl. Leer und Unsinn ergeben null — nicht einen Fehler. */
 private fun String.zahl(): Double = replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0 } ?: 0.0

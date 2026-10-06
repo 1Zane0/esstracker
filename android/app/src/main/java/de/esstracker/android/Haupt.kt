@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -24,20 +25,32 @@ import kotlinx.coroutines.launch
  * mehr ein. Die vollstaendige Ansicht steht auf dem Rechner.
  */
 class Haupt : ComponentActivity() {
+    private lateinit var zustand: Zustand
+
     override fun onCreate(gespeichert: Bundle?) {
         super.onCreate(gespeichert)
         enableEdgeToEdge()
-        val zustand = Zustand(Tagebuch(this), Rechner(this), lifecycleScope)
+        zustand = Zustand(Tagebuch(this), Rechner(this), EigeneDatenbank(this), Einkaufsliste(this), lifecycleScope)
         setContent {
             EsstrackerGestalt {
                 Geruest(zustand)
             }
         }
     }
+
+    /**
+     * Zurueck aus dem Hintergrund: nachschicken und abgleichen. Die App liegt
+     * meist tagelang offen im Hintergrund, und ohne das kaeme ein geschaetzter
+     * Doener erst beim naechsten Eintrag an.
+     */
+    override fun onResume() {
+        super.onResume()
+        zustand.uebertrage(still = true)
+    }
 }
 
 /** Welcher Bildschirm gerade offen ist. */
-enum class Seite { Heute, Erfassen, Einstellungen }
+enum class Seite { Heute, Erfassen, Einkauf, Einstellungen }
 
 /**
  * Der Zustand der App.
@@ -50,6 +63,8 @@ enum class Seite { Heute, Erfassen, Einstellungen }
 class Zustand(
     val tagebuch: Tagebuch,
     val rechner: Rechner,
+    val eigene: EigeneDatenbank,
+    val einkauf: Einkaufsliste,
     private val bereich: CoroutineScope,
 ) {
     var seite by mutableStateOf(Seite.Heute)
@@ -60,11 +75,31 @@ class Zustand(
         private set
     var kcalHeute by mutableStateOf(tagebuch.kcalHeute())
         private set
+    /** Wie viele Eintraege von heute noch ohne Naehrwerte zaehlen. */
+    var offenHeute by mutableStateOf(tagebuch.offenHeute())
+        private set
     var ziel by mutableStateOf(tagebuch.ziel)
         private set
 
     /** Wie viele Eintraege noch beim Rechner fehlen. */
     var offen by mutableStateOf(tagebuch.warteschlange().size)
+        private set
+
+    /**
+     * Die Einkaufsliste, gespiegelt fuer Compose.
+     *
+     * Aus demselben Grund wie `gekoppelt`: die Liste liegt in einer Datei, und
+     * eine Datei aendert sich fuer Compose unsichtbar. Ohne das bliebe der
+     * Haken aus, den man gerade gesetzt hat.
+     */
+    var einkaufsListe by mutableStateOf(einkauf.liste)
+        private set
+    var einkaufOffen by mutableStateOf(einkauf.offen())
+        private set
+    /** Wie viele Aenderungen an der Liste noch beim Rechner fehlen. */
+    var einkaufWartet by mutableStateOf(einkauf.offeneAenderungen)
+        private set
+    var gleichtEinkaufAb by mutableStateOf(false)
         private set
     var sendetGerade by mutableStateOf(false)
         private set
@@ -94,6 +129,13 @@ class Zustand(
     var selbst by mutableStateOf(false)
 
     /**
+     * Was die Maske zum Selbst-Eintragen schon vorausfuellt: der Suchbegriff,
+     * der nichts fand, oder das gescannte Produkt ohne Naehrwerte samt
+     * Strichcode. Den Namen hat man dann ja schon einmal getippt.
+     */
+    var vorlage by mutableStateOf<Datenbank.Treffer?>(null)
+
+    /**
      * Ob eine Suche gelaufen ist und nichts gebracht hat.
      *
      * Genau dann ist der Hinweis aufs Selbst-Eintragen am Platz — davor waere
@@ -108,8 +150,12 @@ class Zustand(
     var suchtRechner by mutableStateOf(false)
 
     fun frischAuf() {
+        einkaufsListe = einkauf.liste
+        einkaufOffen = einkauf.offen()
+        einkaufWartet = einkauf.offeneAenderungen
         heute = tagebuch.vonHeute()
         kcalHeute = tagebuch.kcalHeute()
+        offenHeute = tagebuch.offenHeute()
         ziel = tagebuch.ziel
         offen = tagebuch.warteschlange().size
         gekoppelt = rechner.gekoppelt
@@ -122,8 +168,12 @@ class Zustand(
 
     fun trageEin(eintrag: Eintrag) {
         tagebuch.trageEin(eintrag)
+        vorlage = null
         frischAuf()
-        sage("„${eintrag.name}“ eingetragen · ${eintrag.kcal().toInt()} kcal")
+        sage(
+            if (eintrag.offen) "„${eintrag.name}“ eingetragen — die Nährwerte schätzt Claude am Rechner."
+            else "„${eintrag.name}“ eingetragen · ${eintrag.kcal().toInt()} kcal"
+        )
         // Sofort versuchen zu senden. Klappt es nicht, bleibt der Eintrag in
         // der Warteschlange — deshalb gibt es hier auch keine Fehlermeldung:
         // „noch nicht uebertragen“ ist ein Zustand, kein Fehler.
@@ -140,14 +190,94 @@ class Zustand(
         sage(if (schon) "Hier gelöscht. Auf dem Rechner bleibt der Eintrag stehen." else "Gelöscht.")
     }
 
+    // ---------- Einkaufsliste ----------
+
+    /**
+     * Abhaken, Menge verstellen, dazuschreiben, wegnehmen.
+     *
+     * Alles gilt sofort und geht danach raus. Klappt das nicht — im Laden ist
+     * der Rechner nicht erreichbar —, bleibt die Aenderung liegen und geht
+     * beim naechsten Abgleich mit. „Noch nicht uebertragen" ist hier ein
+     * Zustand und kein Fehler, genau wie bei den Eintraegen.
+     */
+    fun hakeAb(posten: EinkaufsPosten) {
+        einkauf.hake(posten, !posten.erledigt)
+        frischAuf()
+        einkaufSchicken()
+    }
+
+    fun postenSchritt(posten: EinkaufsPosten, richtung: Int) {
+        einkauf.schritt(posten, richtung)
+        frischAuf()
+        einkaufSchicken()
+    }
+
+    fun postenAnlegen(name: String, menge: Double, einheit: String) {
+        val posten = einkauf.legeAn(name, menge, einheit, Einkaufsliste.GRUPPE_SONSTIGES)
+        frischAuf()
+        if (posten == null) {
+            sage("„${name.trim()}“ steht schon auf der Liste.")
+            return
+        }
+        sage("„${posten.name}“ dazugeschrieben.")
+        einkaufSchicken()
+    }
+
+    fun postenWeg(posten: EinkaufsPosten) {
+        einkauf.nimmWeg(posten)
+        frischAuf()
+        sage("„${posten.name}“ von der Liste genommen.")
+        einkaufSchicken()
+    }
+
+    /** Der Knopf auf dem Bildschirm: schicken, was liegt, und die Liste holen. */
+    fun einkaufAbgleichen() {
+        if (!gekoppelt) {
+            sage("Noch kein Rechner gekoppelt — siehe Einstellungen.")
+            return
+        }
+        einkaufSchicken(still = false, auchOhneAenderung = true)
+    }
+
+    /**
+     * Schickt die offenen Aenderungen und uebernimmt die Liste, die
+     * zurueckkommt.
+     *
+     * Bestaetigt wird nur, was wirklich rausging: waehrend die Anfrage lief,
+     * kann im Laden schon der naechste Haken gesetzt worden sein.
+     */
+    fun einkaufSchicken(still: Boolean = true, auchOhneAenderung: Boolean = false) {
+        if (!gekoppelt || gleichtEinkaufAb) return
+        val (aenderungen, neue, weg) = einkauf.offeneListe()
+        if (aenderungen.isEmpty() && neue.isEmpty() && weg.isEmpty() && !auchOhneAenderung) return
+
+        gleichtEinkaufAb = true
+        bereich.launch {
+            val liste = withContext(Dispatchers.IO) { rechner.sendeEinkauf(aenderungen, neue, weg) }
+            gleichtEinkaufAb = false
+            if (liste == null) {
+                if (!still) sage("Der Rechner ist nicht erreichbar. Die Änderungen gehen später raus.")
+                return@launch
+            }
+            einkauf.bestaetigt(aenderungen, neue, weg)
+            einkauf.uebernimm(liste)
+            frischAuf()
+            if (!still) sage("Liste abgeglichen — ${einkaufOffen} noch zu holen.")
+        }
+    }
+
     // ---------- Uebertragen ----------
 
-    /** Leert die Warteschlange. `still` unterdrueckt die Erfolgsmeldung. */
+    /**
+     * Leert die Warteschlange und gleicht danach ab. `still` unterdrueckt die
+     * Erfolgsmeldung.
+     */
     fun uebertrage(still: Boolean = false) {
         if (sendetGerade) return
         val stapel = tagebuch.warteschlange()
         if (stapel.isEmpty()) {
             if (!still) sage("Es liegt nichts zum Übertragen bereit.")
+            gleicheAb()
             return
         }
         if (!gekoppelt) {
@@ -168,29 +298,91 @@ class Zustand(
                     else "Der Rechner hatte schon alles."
                 )
             }
+            if (!abrechnung.geklappt) return@launch
+            gleicheAb()
+            // Ging etwas ohne Naehrwerte raus, schaetzt der Rechner jetzt.
+            // Das dauert mit Haiku ein paar Sekunden; danach noch einmal
+            // nachsehen, damit die Zahl von heute stimmt, solange die App
+            // noch offen ist.
+            if (stapel.any { it.offen && it.id in abrechnung.angenommen }) {
+                delay(ABGLEICH_NACH_SCHAETZUNG_MS)
+                gleicheAb(sofort = true)
+            }
+        }
+    }
+
+    private var zuletztAbgeglichen = 0L
+    private var gleichtAb = false
+
+    /**
+     * Holt eigene Datenbank und Nachtraege vom Rechner.
+     *
+     * Hoechstens alle halbe Minute, ausser `sofort`: angestossen wird das beim
+     * Aufschlagen, nach jeder Uebertragung und aus dem Hintergrund zurueck —
+     * und unterwegs laeuft jeder Versuch erst in den Zeitablauf.
+     */
+    fun gleicheAb(sofort: Boolean = false) {
+        if (!gekoppelt || gleichtAb) return
+        val jetzt = System.currentTimeMillis()
+        if (!sofort && jetzt - zuletztAbgeglichen < ABGLEICH_ABSTAND_MS) return
+        zuletztAbgeglichen = jetzt
+        gleichtAb = true
+        bereich.launch {
+            val abgleich = withContext(Dispatchers.IO) { rechner.abgleich() }
+            gleichtAb = false
+            if (abgleich == null) return@launch
+            eigene.ersetze(abgleich.eigene)
+            // Die Einkaufsliste kommt beim selben Abgleich mit. Liegt hier
+            // noch etwas, das der Rechner nicht kennt, geht das zuerst raus —
+            // sonst kaeme seine Fassung zurueck und machte drei Haken aus dem
+            // Laden wieder rueckgaengig.
+            abgleich.einkauf?.let { vomRechner ->
+                einkauf.uebernimm(vomRechner)
+                einkaufSchicken()
+            }
+            val geaendert = tagebuch.uebernimm(abgleich.nachtraege)
+            abgleich.ziel?.let { tagebuch.setzeZiel(it) }
+            frischAuf()
+            if (geaendert > 0) {
+                sage(if (geaendert == 1) "1 Eintrag hat jetzt Nährwerte vom Rechner." else "$geaendert Einträge haben jetzt Nährwerte vom Rechner.")
+            }
         }
     }
 
     // ---------- Suchen ----------
 
+    /**
+     * Sucht erst in der eigenen Datenbank, dann in Open Food Facts. Die
+     * eigenen Treffer stehen sofort da und oben: sie sind das, was man schon
+     * einmal gegessen hat, und sie kommen auch ohne Netz.
+     */
     fun sucheProdukt() {
         val wort = suchtext.trim()
         if (wort.length < 2) return
         suchtGerade = true
         ohneTreffer = false
+        vorlage = null
         treffer.clear()
+        treffer.addAll(eigene.suche(wort))
         bereich.launch {
             val gefunden = withContext(Dispatchers.IO) { Datenbank.ueberText(wort) }
             treffer.addAll(gefunden)
             suchtGerade = false
-            ohneTreffer = gefunden.isEmpty()
-            if (gefunden.isEmpty()) {
-                sage("Nichts gefunden — du kannst es selbst eintragen.")
+            ohneTreffer = treffer.isEmpty()
+            if (treffer.isEmpty()) {
+                vorlage = leereVorlage(name = wort)
+                sage("Nichts gefunden — Name und Menge genügen.")
             }
         }
     }
 
     fun sucheBarcode(code: String) {
+        // Was schon einmal geschaetzt wurde, kennt die eigene Datenbank —
+        // ohne Netz und ohne auf Open Food Facts zu warten.
+        eigene.zuBarcode(code)?.let {
+            gewaehlt = it
+            return
+        }
         suchtGerade = true
         bereich.launch {
             val gefunden = withContext(Dispatchers.IO) { Datenbank.ueberBarcode(code) }
@@ -198,16 +390,23 @@ class Zustand(
             when {
                 gefunden == null -> {
                     ohneTreffer = true
+                    vorlage = leereVorlage(barcode = code)
                     sage("$code steht nicht in der Datenbank.")
                 }
                 !gefunden.hatEnergie -> {
                     ohneTreffer = true
-                    sage("„${gefunden.name}“ hat dort keine Nährwerte hinterlegt.")
+                    vorlage = gefunden
+                    sage("„${gefunden.name}“ hat dort keine Nährwerte — Name und Menge genügen.")
                 }
                 else -> gewaehlt = gefunden
             }
         }
     }
+
+    private fun leereVorlage(name: String = "", barcode: String = "") = Datenbank.Treffer(
+        barcode = barcode, name = name, marke = "", menge = "",
+        je100 = Naehrwerte(), einheit = "g", quelle = "offen",
+    )
 
     // ---------- Rechner suchen ----------
 
@@ -251,6 +450,11 @@ class Zustand(
                 funde.add(fund)
             }
         }
+    }
+
+    companion object {
+        const val ABGLEICH_ABSTAND_MS = 30_000L
+        const val ABGLEICH_NACH_SCHAETZUNG_MS = 25_000L
     }
 
     fun trenne() {

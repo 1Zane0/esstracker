@@ -58,6 +58,12 @@ const (
 // muss deshalb bei jedem Aufruf mit — auch beim Fortsetzen.
 const Aufwand = "max"
 
+// Modell ist fest Haiku, fuer das Gespraech wie fuer die Schaetzungen. Das
+// ist so gewollt: hier wird ein Tag eingeordnet und eine Heidelbeere
+// geschaetzt, und dafuer reicht das kleine Modell. Wie der Aufwand muss es bei
+// jedem Aufruf mit — sonst nimmt die CLI, was in ihren Einstellungen steht.
+const Modell = "haiku"
+
 // Frist ist grosszuegig, aber nicht endlos: was zehn Minuten laeuft, haengt,
 // und ein haengender Prozess sperrt jede weitere Frage. Daneben steht die
 // Notbremse von Hand.
@@ -418,6 +424,7 @@ type ereignis struct {
 func frage(ctx context.Context, ordner, sitzung, text string, m melder) (antwort, neueSitzung string, err error) {
 	argumente := []string{
 		"-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+		"--model", Modell,
 		"--effort", Aufwand,
 		"--append-system-prompt", anweisung,
 		// Lesen genuegt: hier wird eingeordnet, nicht eingetragen. Ein

@@ -129,9 +129,12 @@ function zeichne() {
   if (seite === 'heute') heute();
   if (seite === 'verlauf') verlauf();
   if (seite === 'produkte') produkte();
+  if (seite === 'einkauf') einkauf();
   if (seite === 'handy') handy();
   if (seite === 'ki') ki();
   kopfSchub();
+  schaetzTakt();
+  planTakt();
   $('#fuss-datum').textContent = tagLang(stand.heute);
 }
 
@@ -157,6 +160,7 @@ function menue() {
   const z = stand.zahlen;
   setzeZahl('#zahl-heute', z.eintraege);
   setzeZahl('#zahl-produkte', stand.produkte.length);
+  setzeZahl('#zahl-einkauf', (stand.einkauf && stand.einkauf.posten || []).filter((p) => !p.erledigt).length);
   setzeZahl('#zahl-handy', stand.geraete.length);
   kiZahl();
 }
@@ -178,6 +182,8 @@ function tagVon(datum) {
 function heute() {
   const t = tagVon(stand.heute);
   const z = stand.zahlen;
+
+  offenKarte();
 
   $('#heute-zusatz').textContent = tagLang(stand.heute);
   $('#heute-anzahl').textContent = z.eintraege === 0 ? '' :
@@ -245,8 +251,18 @@ function mahlzeitgruppen(t) {
   return gruppen;
 }
 
+// quellen sagt, was an einer Zahl anders ist als nachgeschlagen. Aus der
+// Datenbank steht nichts dabei — das ist der Normalfall.
+const quellen = {
+  hand: 'von Hand',
+  ki: 'geschätzt',
+  eigen: 'eigene DB',
+  offen: 'ohne Werte',
+};
+
 function eintragszeile(z) {
-  const r = el('div', 'eintrag');
+  const offen = z.quelle === 'offen';
+  const r = el('div', 'eintrag' + (offen ? ' offen' : ''));
   r.appendChild(el('div', 'uhr', z.uhr));
 
   const was = el('div', 'was');
@@ -258,15 +274,33 @@ function eintragszeile(z) {
   if (z.marke) teile.push(z.marke);
   teile.push(gramm(z.menge) + ' ' + z.einheit);
   if (z.je100 && z.je100.kcal) teile.push(zahl(z.je100.kcal) + ' kcal/100 ' + z.einheit);
-  was.appendChild(el('span', null, teile.join(' · ')));
+  const unten = el('span');
+  if (quellen[z.quelle]) unten.appendChild(el('em', 'quelle', quellen[z.quelle]));
+  unten.appendChild(document.createTextNode(teile.join(' · ')));
+  was.appendChild(unten);
+  // Worauf eine Schaetzung beruht, steht im Titel: nachlesbar, ohne dass
+  // jede Zeile einen Satz mitschleppt.
+  const s = z.schaetzung;
+  if (s) {
+    r.title = [s.begruendung, s.sicherheit && 'Sicherheit: ' + s.sicherheit,
+               s.nameVorher && 'am Handy: „' + s.nameVorher + '"'].filter(Boolean).join('\n');
+  }
   r.appendChild(was);
 
+  // Ein offener Eintrag zaehlt mit null. Eine 0 hinzuschreiben hiesse aber,
+  // er haette keine Kalorien — deshalb das Fragezeichen.
   const k = el('div', 'kcal');
-  k.appendChild(el('b', null, zahl(z.kcal)));
+  k.appendChild(el('b', null, offen ? '?' : zahl(z.kcal)));
   k.appendChild(el('span', null, 'kcal'));
   r.appendChild(k);
 
   const werkzeuge = el('div', 'werkzeuge');
+  if (z.quelle === 'hand' || z.quelle === 'ki' || z.quelle === 'eigen') {
+    werkzeuge.appendChild(knopf('i-ki', 'Von Claude neu schätzen lassen', () => {
+      laden('/api/eintrag/' + encodeURIComponent(z.id) + '/schaetzen', 'POST');
+      melde('„' + z.name + '" wird neu geschätzt.');
+    }));
+  }
   werkzeuge.appendChild(knopf('i-weg', 'Eintrag löschen', () => {
     laden('/api/eintrag/' + encodeURIComponent(z.id), 'DELETE');
     melde('„' + z.name + '" gelöscht — am Handy bleibt der Eintrag stehen.');
@@ -280,6 +314,90 @@ function eintragszeile(z) {
   r.appendChild(anteil);
 
   return r;
+}
+
+/* ---------- Ohne Naehrwerte ---------- */
+
+// Eintraege, die am Handy nur Name und Menge bekamen, schaetzt Claude von
+// allein, sobald sie hier ankommen. Die Karte zeigt, was noch fehlt und was
+// gerade passiert — und ist weg, sobald nichts mehr fehlt.
+let schaetzUhr = null;
+let schaetzteGerade = false;
+
+function offenKarte() {
+  const karte = $('#offen-karte');
+  const st = stand.schaetzung || {};
+  const offen = stand.offen || [];
+
+  if (!offen.length && !st.laeuft) {
+    karte.hidden = true;
+    karte.replaceChildren();
+    return;
+  }
+  karte.hidden = false;
+
+  const h = el('h2', null, 'Ohne Nährwerte');
+  h.appendChild(el('span', 'zusatz',
+    offen.length + (offen.length === 1 ? ' Eintrag zählt' : ' Einträge zählen') + ' noch mit null'));
+
+  const lage = el('p', 'lage');
+  if (st.laeuft) {
+    lage.appendChild(el('span', 'schlag'));
+    const wieviele = st.anzahl ? st.anzahl + (st.anzahl === 1 ? ' Eintrag' : ' Einträge') : 'Einträge';
+    lage.appendChild(document.createTextNode('Claude (Haiku) schätzt gerade ' + wieviele + ' …'));
+  } else if (!st.bereit) {
+    lage.textContent = st.hinweis;
+  } else if (st.fehler) {
+    lage.classList.add('fehler');
+    lage.textContent = 'Das Schätzen ist gescheitert: ' + st.fehler;
+  } else {
+    lage.textContent = 'Claude schätzt von allein, was vom Handy ohne Werte kommt. ' +
+      'Was geschätzt ist, zählt mit und landet in der eigenen Datenbank.';
+  }
+
+  const liste = el('div');
+  for (const z of offen) {
+    const zeile = eintragszeile(z);
+    // Das Datum gehoert hier dazu: offen kann auch etwas von gestern sein,
+    // das erst jetzt vom Handy kam.
+    zeile.querySelector('.uhr').textContent = z.tag === stand.heute ? z.uhr : tagKurz(z.tag);
+    const grund = st.unklar && st.unklar[z.id];
+    if (grund) {
+      const span = zeile.querySelector('.was span');
+      span.appendChild(document.createTextNode(' · ' + grund));
+      zeile.title = grund;
+    }
+    liste.appendChild(zeile);
+  }
+
+  const schub = el('div', 'schub');
+  if (st.laeuft) {
+    const halt = el('button', 'knopf', 'Abbrechen');
+    halt.addEventListener('click', () => laden('/api/schaetzen/abbruch', 'POST'));
+    schub.appendChild(halt);
+  } else if (offen.length) {
+    const los = el('button', 'knopf haupt', 'Jetzt schätzen');
+    los.disabled = !st.bereit;
+    los.addEventListener('click', () => laden('/api/schaetzen', 'POST'));
+    schub.appendChild(los);
+  }
+
+  karte.replaceChildren(h, lage, liste, schub);
+}
+
+// schaetzTakt fragt oefter nach, solange geschaetzt wird — sonst stuende die
+// fertige Zahl bis zu zehn Sekunden lang nicht da. Und wenn es fertig ist,
+// sagt es das auch auf den anderen Seiten.
+function schaetzTakt() {
+  const st = stand.schaetzung || {};
+  if (st.laeuft && !schaetzUhr) schaetzUhr = setInterval(() => laden(), 2000);
+  if (!st.laeuft && schaetzUhr) { clearInterval(schaetzUhr); schaetzUhr = null; }
+
+  if (schaetzteGerade && !st.laeuft && !st.fehler) {
+    const rest = (stand.offen || []).length;
+    melde(rest ? 'Geschätzt — ' + rest + ' noch ohne Werte.' : 'Geschätzt — alles hat jetzt Nährwerte.');
+  }
+  schaetzteGerade = !!st.laeuft;
 }
 
 /* ---------- Verlauf ---------- */
@@ -407,6 +525,7 @@ function raster() {
 /* ---------- Produkte ---------- */
 
 function produkte() {
+  eigene();
   const wohin = $('#produkte-liste');
   if (!stand.produkte.length) {
     wohin.replaceChildren(el('div', 'leer', 'Noch keine Produkte angekommen.'));
@@ -432,6 +551,373 @@ function produkte() {
     r.appendChild(werte);
     return r;
   }));
+}
+
+function eigene() {
+  const liste = stand.eigene || [];
+  $('#eigene-zusatz').textContent = liste.length
+    ? liste.length + (liste.length === 1 ? ' Lebensmittel' : ' Lebensmittel') : '';
+  const wohin = $('#eigene-liste');
+  if (!liste.length) {
+    wohin.replaceChildren(el('div', 'leer', 'Noch leer. Hier landet, was Claude geschätzt hat.'));
+    return;
+  }
+  wohin.replaceChildren(...liste.map((e) => {
+    const r = el('div', 'produkt');
+    const was = el('div', 'was');
+    was.appendChild(el('b', null, e.name));
+    const teile = [];
+    if (e.marke) teile.push(e.marke);
+    if (e.sicherheit) teile.push('Sicherheit ' + e.sicherheit);
+    if (e.begruendung) teile.push(e.begruendung);
+    if (e.barcode) teile.push(e.barcode);
+    was.appendChild(el('span', null, teile.join(' · ')));
+    r.appendChild(was);
+
+    const werte = el('div', 'werte');
+    const n = e.je100;
+    werte.appendChild(wertfeld(zahl(n.kcal), 'kcal/100 ' + (e.einheit || 'g')));
+    werte.appendChild(wertfeld(gramm(n.fett), 'Fett'));
+    werte.appendChild(wertfeld(gramm(n.kohlenhydrate), 'KH'));
+    werte.appendChild(wertfeld(gramm(n.eiweiss), 'Eiweiß'));
+    r.appendChild(werte);
+
+    r.appendChild(knopf('i-weg', 'Aus der eigenen Datenbank nehmen', () => {
+      laden('/api/eigene/' + encodeURIComponent(e.id), 'DELETE');
+      melde('„' + e.name + '" aus der eigenen Datenbank genommen. Die Einträge behalten ihre Werte.');
+    }));
+    return r;
+  }));
+}
+
+/* ---------- Einkauf ---------- */
+
+/* Die Einkaufsliste ist der eine Teil, der zum Handy laeuft statt von ihm her:
+ * geschrieben wird hier, abgehakt wird im Laden. Deshalb wird sie hier auch
+ * nicht nur nach der eigenen Aenderung neu gezeichnet, sondern bei jedem
+ * Nachfragen — waehrend man hinsieht, kann jemand mit dem Handy schon drei
+ * Posten abgehakt haben.
+ *
+ * Preise stehen hier keine. Es gibt Mengen, und die verstellt man mit + und −;
+ * wie gross ein Schritt ist, sagt die Einheit, und die kommt aus dem
+ * Tagebuch — damit das Plus hier und das Plus am Handy dasselbe tun. */
+
+let planUhr = null;
+let planLief = false;
+
+const planVorschlaege = [
+  'Einkauf für die nächsten drei Tage',
+  'Wochenendeinkauf',
+  'Was ich sowieso ständig esse',
+  'Mehr Eiweiß, weniger Zucker',
+  'Nur Frühstück für die Woche',
+];
+
+function einkauf() {
+  planKarte();
+  einkaufListe();
+  einkaufSchub();
+  neuFelder();
+}
+
+// planKarte ist der Auftrag an Claude: ein Wunsch, ein Knopf, und waehrend es
+// laeuft der Stand. Ohne claude-CLI steht hier, warum nichts geht — bevor
+// jemand tippt und nicht danach.
+function planKarte() {
+  const pl = stand.plan || {};
+  const e = stand.einkauf || {};
+
+  $('#plan-zusatz').textContent = e.erstellt
+    ? 'zuletzt ' + zeitpunkt(e.erstellt) + (e.modell ? ' · ' + e.modell : '') : '';
+
+  const lage = $('#plan-lage');
+  lage.className = 'lage';
+  lage.replaceChildren();
+  if (pl.laeuft) {
+    lage.appendChild(el('span', 'schlag'));
+    lage.appendChild(document.createTextNode(
+      'Claude (Haiku) schreibt' + (pl.wunsch ? ' — „' + pl.wunsch + '“' : ' die Liste') + ' …'));
+  } else if (!pl.bereit) {
+    lage.textContent = pl.hinweis;
+  } else if (pl.fehler) {
+    lage.classList.add('fehler');
+    lage.textContent = 'Das Schreiben ist gescheitert: ' + pl.fehler;
+  }
+
+  const gesperrt = !!pl.laeuft || !pl.bereit;
+  $('#plan-text').disabled = gesperrt;
+  $('#plan-senden').disabled = gesperrt;
+  $('#plan-senden').textContent = pl.laeuft ? 'läuft …' : 'Schreiben';
+  $('#plan-ergaenzen').disabled = gesperrt;
+
+  const v = $('#plan-vorschlaege');
+  if (!v.childElementCount) {
+    v.replaceChildren(...planVorschlaege.map((t) => {
+      const b = el('button', null, t);
+      b.type = 'button';
+      b.addEventListener('click', () => { $('#plan-text').value = t; planSenden(); });
+      return b;
+    }));
+  }
+  for (const b of v.children) b.disabled = gesperrt;
+
+  // Der Abbruch steht in der Kopfzeile, wo auch der des KI-Reiters steht.
+  kopfSchub();
+}
+
+async function planSenden() {
+  const feld = $('#plan-text');
+  const wunsch = feld.value.trim();
+  const ergaenzen = $('#plan-ergaenzen').checked;
+  const vorher = (stand.einkauf && stand.einkauf.posten || []).length;
+  if (!ergaenzen && vorher) {
+    melde(vorher + (vorher === 1 ? ' Posten wird' : ' Posten werden') + ' durch die neue Liste ersetzt.');
+  }
+  await laden('/api/einkauf/erstellen', 'POST', { wunsch, ergaenzen });
+  if (stand.plan && stand.plan.laeuft) feld.value = '';
+}
+
+function einkaufListe() {
+  const posten = (stand.einkauf && stand.einkauf.posten) || [];
+  const offen = posten.filter((p) => !p.erledigt).length;
+  const wohin = $('#einkauf-liste');
+
+  $('#einkauf-zusatz').textContent = posten.length
+    ? offen + ' von ' + posten.length + ' offen' : '';
+
+  const notiz = $('#einkauf-notiz');
+  const text = (stand.einkauf && stand.einkauf.notiz) || '';
+  notiz.hidden = !text;
+  notiz.textContent = text;
+
+  // Nicht neu bauen, solange jemand in einer Zeile eine Menge eintippt: das
+  // Fenster fragt alle zehn Sekunden nach, und das Feld waere weg, bevor die
+  // Zahl fertig ist.
+  if (wohin.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+
+  if (!posten.length) {
+    wohin.replaceChildren(el('div', 'leer',
+      'Noch keine Liste. Oben einen Wunsch eintippen — oder unten selbst einen Posten dazuschreiben.'));
+    return;
+  }
+
+  // Nach Abteilung gebuendelt, in der Reihenfolge, in der man den Laden
+  // durchgeht. Die kommt vom Dienst; hier wird nur gruppiert.
+  const gruppen = [];
+  for (const p of posten) {
+    let g = gruppen[gruppen.length - 1];
+    if (!g || g.name !== p.gruppe) {
+      g = { name: p.gruppe, zeilen: [] };
+      gruppen.push(g);
+    }
+    g.zeilen.push(p);
+  }
+
+  wohin.replaceChildren(...gruppen.map((g) => {
+    const kasten = el('div', 'mahlzeit');
+    const h = el('h3', null, g.name);
+    const offenHier = g.zeilen.filter((p) => !p.erledigt).length;
+    h.appendChild(el('span', 'summe', offenHier ? offenHier + ' offen' : 'erledigt'));
+    kasten.appendChild(h);
+    for (const p of g.zeilen) kasten.appendChild(postenZeile(p));
+    return kasten;
+  }));
+}
+
+function postenZeile(p) {
+  const r = el('div', 'posten' + (p.erledigt ? ' erledigt' : ''));
+
+  const haken = el('button', 'haken');
+  haken.type = 'button';
+  haken.setAttribute('aria-pressed', p.erledigt ? 'true' : 'false');
+  haken.title = p.erledigt ? 'Wieder offen' : 'Im Wagen';
+  haken.setAttribute('aria-label', haken.title);
+  if (p.erledigt) haken.appendChild(bild('i-haken', 12));
+  haken.addEventListener('click', () => {
+    laden('/api/einkauf/posten/' + encodeURIComponent(p.id) + '/haken', 'POST', { erledigt: !p.erledigt });
+  });
+  r.appendChild(haken);
+
+  const was = el('div', 'was');
+  was.appendChild(el('b', null, p.name));
+  // Die Marke steht nur an dem, was nicht von Claude kam: auf einer Liste, die
+  // er geschrieben hat, waere sie an jeder Zeile und sagte damit nichts mehr.
+  const unten = el('span');
+  if (p.von === 'hand') unten.appendChild(el('em', 'quelle', 'selbst'));
+  unten.appendChild(document.createTextNode(p.grund || (p.von === 'hand' ? 'dazugeschrieben' : p.gruppe)));
+  was.appendChild(unten);
+  was.addEventListener('click', () => {
+    laden('/api/einkauf/posten/' + encodeURIComponent(p.id) + '/haken', 'POST', { erledigt: !p.erledigt });
+  });
+  r.appendChild(was);
+
+  r.appendChild(mengeFeld(p));
+
+  const werkzeuge = el('div', 'werkzeuge');
+  werkzeuge.appendChild(knopf('i-weg', 'Von der Liste nehmen', () => {
+    laden('/api/einkauf/posten/' + encodeURIComponent(p.id), 'DELETE');
+    melde('„' + p.name + '“ von der Liste genommen.');
+  }));
+  r.appendChild(werkzeuge);
+  return r;
+}
+
+// mengeFeld ist − Zahl +. Die Zahl selbst ist ein Knopf: ein Druck darauf
+// macht ein Feld daraus, in dem Menge und Einheit auch getauscht werden
+// koennen. Ueber + und − geht es sonst in Schritten, die zur Einheit passen —
+// 50 g beim Mehl, ein Stueck beim Ei.
+function mengeFeld(p) {
+  const kasten = el('div', 'menge');
+
+  const weniger = el('button', 'stufe');
+  weniger.type = 'button';
+  weniger.title = 'weniger';
+  weniger.setAttribute('aria-label', 'weniger');
+  weniger.appendChild(bild('i-minus', 13));
+  weniger.addEventListener('click', () => schritt(p, -1));
+
+  const wert = el('button', 'wert', mengeText(p));
+  wert.type = 'button';
+  wert.title = 'Menge und Einheit ändern';
+  wert.addEventListener('click', () => mengeTauschen(kasten, p));
+
+  const mehr = el('button', 'stufe');
+  mehr.type = 'button';
+  mehr.title = 'mehr';
+  mehr.setAttribute('aria-label', 'mehr');
+  mehr.appendChild(bild('i-plus', 13));
+  mehr.addEventListener('click', () => schritt(p, 1));
+
+  kasten.replaceChildren(weniger, wert, mehr);
+  return kasten;
+}
+
+function schritt(p, richtung) {
+  laden('/api/einkauf/posten/' + encodeURIComponent(p.id) + '/schritt', 'POST', { richtung });
+}
+
+// mengeTauschen macht aus der Zahl ein Feld — Menge tippen, Einheit wählen.
+// Enter und der Wechsel der Einheit schicken ab, Esc lässt alles, wie es war.
+function mengeTauschen(kasten, p) {
+  const zahl = el('input');
+  zahl.type = 'number';
+  zahl.min = '0';
+  zahl.step = '0.5';
+  zahl.value = String(p.menge);
+  zahl.inputMode = 'decimal';
+
+  const einheit = einheitenWahl(p.einheit);
+
+  const fertig = () => {
+    const menge = Number(zahl.value.replace(',', '.'));
+    if (!(menge > 0)) { einkaufListe(); return; }
+    laden('/api/einkauf/posten/' + encodeURIComponent(p.id) + '/menge', 'POST',
+          { menge, einheit: einheit.value });
+  };
+  zahl.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); fertig(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); einkaufListe(); }
+  });
+  einheit.addEventListener('change', fertig);
+  zahl.addEventListener('blur', () => setTimeout(() => {
+    if (!kasten.contains(document.activeElement)) fertig();
+  }, 0));
+
+  kasten.replaceChildren(zahl, einheit);
+  zahl.focus();
+  zahl.select();
+}
+
+// einheitenWahl baut die Auswahl aus dem, was der Dienst mitgeschickt hat —
+// die Oberflaeche kennt die Einheiten nicht selbst.
+function einheitenWahl(gewaehlt) {
+  const s = el('select');
+  for (const e of stand.einheiten || []) {
+    const o = el('option', null, e.viele === e.eins ? e.eins : e.eins + ' / ' + e.viele);
+    o.value = e.name;
+    if (e.name === gewaehlt) o.selected = true;
+    s.appendChild(o);
+  }
+  return s;
+}
+
+function einheitVon(name) {
+  return (stand.einheiten || []).find((e) => e.name === name) || { eins: name, viele: name };
+}
+
+function mengeText(p) {
+  const e = einheitVon(p.einheit);
+  const menge = Number(p.menge || 0);
+  const name = Math.abs(menge - 1) < 0.001 ? e.eins : e.viele;
+  return menge.toLocaleString('de-DE', { maximumFractionDigits: 3 }) + ' ' + name;
+}
+
+function einkaufSchub() {
+  const posten = (stand.einkauf && stand.einkauf.posten) || [];
+  const fertig = posten.filter((p) => p.erledigt).length;
+  const schub = $('#einkauf-schub');
+  const teile = [];
+
+  if (fertig) {
+    const weg = el('button', 'knopf', 'Erledigte wegräumen (' + fertig + ')');
+    weg.type = 'button';
+    weg.addEventListener('click', () => {
+      laden('/api/einkauf/aufraeumen', 'POST');
+      melde(fertig + (fertig === 1 ? ' Posten weggeräumt.' : ' Posten weggeräumt.'));
+    });
+    teile.push(weg);
+  }
+  if (posten.length) {
+    const leer = el('button', 'knopf gefahr', 'Liste leeren');
+    leer.type = 'button';
+    leer.addEventListener('click', () => {
+      laden('/api/einkauf/leeren', 'POST');
+      melde('Liste geleert.');
+    });
+    teile.push(leer);
+
+    const hinweis = el('span', 'randnotiz',
+      'Geht beim nächsten Abgleich aufs Handy — dort wird abgehakt.');
+    teile.push(hinweis);
+  }
+  schub.replaceChildren(...teile);
+}
+
+// neuFelder fuellt die beiden Auswahlfelder unter der Liste. Einmal: sie
+// aendern sich nicht, und ein Neubau wuerde die Wahl jedes Mal zurueckwerfen.
+function neuFelder() {
+  const einheit = $('#neu-einheit');
+  if (!einheit.childElementCount) {
+    for (const e of stand.einheiten || []) {
+      const o = el('option', null, e.viele === e.eins ? e.eins : e.eins + ' / ' + e.viele);
+      o.value = e.name;
+      einheit.appendChild(o);
+    }
+  }
+  const gruppe = $('#neu-gruppe');
+  if (!gruppe.childElementCount) {
+    for (const g of stand.gruppen || []) {
+      const o = el('option', null, g);
+      o.value = g;
+      if (g === 'Sonstiges') o.selected = true;
+      gruppe.appendChild(o);
+    }
+  }
+}
+
+// planTakt fragt oefter nach, solange geschrieben wird — und sagt Bescheid,
+// wenn die Liste da ist, auch wenn gerade eine andere Seite offen steht.
+function planTakt() {
+  const pl = stand.plan || {};
+  if (pl.laeuft && !planUhr) planUhr = setInterval(() => laden(), 1500);
+  if (!pl.laeuft && planUhr) { clearInterval(planUhr); planUhr = null; }
+
+  if (planLief && !pl.laeuft) {
+    const offen = ((stand.einkauf && stand.einkauf.posten) || []).filter((p) => !p.erledigt).length;
+    melde(pl.fehler ? 'Die Liste ist gescheitert: ' + pl.fehler
+                    : 'Liste steht — ' + offen + (offen === 1 ? ' Posten' : ' Posten') + ' zu holen.');
+  }
+  planLief = !!pl.laeuft;
 }
 
 /* ---------- Handy ---------- */
@@ -813,9 +1299,19 @@ function zeitpunkt(rfc) {
 function kopfSchub() {
   const schub = $('#kopf-schub');
   const nachrichten = (kiStand && kiStand.gespraech && kiStand.gespraech.nachrichten) || [];
-  const marke = [seite, !!(kiStand && kiStand.laeuft), nachrichten.length > 0].join('|');
+  const plan = (stand && stand.plan) || {};
+  const marke = [seite, !!(kiStand && kiStand.laeuft), nachrichten.length > 0, !!plan.laeuft].join('|');
   if (marke === kopfMarke) return;
   kopfMarke = marke;
+
+  // Der Einkauf hat genau einen Knopf hier, und nur, solange etwas laeuft:
+  // die Notbremse. Alles andere steht in seinen Karten.
+  if (seite === 'einkauf') {
+    schub.replaceChildren(...(plan.laeuft
+      ? [kopfknopf('i-stopp', 'Abbrechen', () => laden('/api/einkauf/abbruch', 'POST'))]
+      : []));
+    return;
+  }
 
   if (seite !== 'ki' || !kiStand) { schub.replaceChildren(); return; }
 
@@ -1034,7 +1530,10 @@ function kursiv(text, wohin) {
 
 /* ---------- Seiten ---------- */
 
-const titel = { heute: 'Heute', verlauf: 'Verlauf', produkte: 'Produkte', handy: 'Handy', ki: 'KI' };
+const titel = {
+  heute: 'Heute', verlauf: 'Verlauf', produkte: 'Produkte',
+  einkauf: 'Einkauf', handy: 'Handy', ki: 'KI',
+};
 
 function zeigeSeite(neu) {
   seite = neu;
@@ -1046,6 +1545,7 @@ function zeigeSeite(neu) {
   $('#kopf-titel').textContent = titel[neu];
   $('#kopf-pfad').textContent =
     neu === 'heute' && stand ? tagLang(stand.heute) :
+    neu === 'einkauf' ? 'Hier geschrieben, im Laden abgehakt' :
     neu === 'ki' ? 'Claude, mit dem Tagebuch im Rücken' : '';
   if (neu !== 'handy') { clearInterval(uhr); uhr = null; }
 
@@ -1069,6 +1569,27 @@ $('#form-ziel').addEventListener('submit', (e) => {
   e.preventDefault();
   const kcal = Number(e.target.kcal.value);
   laden('/api/ziel', 'POST', { kcal });
+});
+
+$('#form-plan').addEventListener('submit', (e) => { e.preventDefault(); planSenden(); });
+$('#plan-text').addEventListener('input', (e) => hoeheAnpassen(e.target));
+$('#plan-text').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); planSenden(); }
+});
+
+$('#form-posten').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const name = form.name.value.trim();
+  if (!name) { form.name.focus(); return; }
+  const menge = Number(String(form.menge.value).replace(',', '.'));
+  await laden('/api/einkauf/posten', 'POST', {
+    name, menge: menge > 0 ? menge : 0,
+    einheit: form.einheit.value, gruppe: form.gruppe.value,
+  });
+  form.name.value = '';
+  form.menge.value = '';
+  form.name.focus();
 });
 
 $('#form-ki').addEventListener('submit', (e) => { e.preventDefault(); kiSenden(); });

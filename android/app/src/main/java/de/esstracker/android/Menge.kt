@@ -48,6 +48,9 @@ fun MengeBildschirm(zustand: Zustand, treffer: Datenbank.Treffer) {
     val zahl = menge.replace(',', '.').toDoubleOrNull() ?: 0.0
     val kcal = (treffer.je100.kcal * zahl / 100.0).toInt()
     val gueltig = zahl > 0 && zahl <= 100000
+    // Ohne Kilokalorien gibt es hier noch keine Zahl, die mitrechnen koennte.
+    // Eine 0 hinzuschreiben hiesse, es haette keine.
+    val offen = treffer.je100.kcal <= 0
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -72,35 +75,48 @@ fun MengeBildschirm(zustand: Zustand, treffer: Datenbank.Treffer) {
                     treffer.name,
                     fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tinte,
                 )
-                if (treffer.marke.isNotEmpty() || treffer.barcode.isNotEmpty()) {
+                val unterzeile = listOfNotNull(
+                    "eigene Datenbank · geschätzt".takeIf { treffer.quelle == "eigen" },
+                    treffer.marke.takeIf { it.isNotEmpty() },
+                    treffer.menge.takeIf { it.isNotEmpty() },
+                    treffer.barcode.takeIf { it.isNotEmpty() },
+                )
+                if (unterzeile.isNotEmpty()) {
                     Luft(3)
+                    Text(unterzeile.joinToString(" · "), fontSize = 11.5.sp, color = Leise)
+                }
+                if (offen) {
+                    Luft(16)
                     Text(
-                        listOfNotNull(
-                            treffer.marke.takeIf { it.isNotEmpty() },
-                            treffer.menge.takeIf { it.isNotEmpty() },
-                            treffer.barcode.takeIf { it.isNotEmpty() },
-                        ).joinToString(" · "),
+                        "Nährwerte folgen",
+                        fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tinte,
+                    )
+                    Luft(4)
+                    Text(
+                        "Claude schätzt sie am Rechner, sobald der Eintrag dort ankommt, " +
+                            "und legt sie in deiner eigenen Datenbank ab. Bis dahin zählt er mit null.",
                         fontSize = 11.5.sp, color = Leise,
                     )
-                }
-                Luft(16)
-                Row(verticalAlignment = Alignment.Bottom) {
+                } else {
+                    Luft(16)
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            kcal.toString(),
+                            fontSize = 44.sp, fontWeight = FontWeight.SemiBold, color = Tinte,
+                            letterSpacing = (-1.5).sp,
+                        )
+                        Breite(7)
+                        Text(
+                            "kcal", fontSize = 14.sp, color = Leise,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    }
+                    Luft(4)
                     Text(
-                        kcal.toString(),
-                        fontSize = 44.sp, fontWeight = FontWeight.SemiBold, color = Tinte,
-                        letterSpacing = (-1.5).sp,
-                    )
-                    Breite(7)
-                    Text(
-                        "kcal", fontSize = 14.sp, color = Leise,
-                        modifier = Modifier.padding(bottom = 8.dp),
+                        "${treffer.je100.kcal.toInt()} kcal je 100 ${treffer.einheit}",
+                        fontSize = 11.5.sp, color = Leise, fontFamily = Mono,
                     )
                 }
-                Luft(4)
-                Text(
-                    "${treffer.je100.kcal.toInt()} kcal je 100 ${treffer.einheit}",
-                    fontSize = 11.5.sp, color = Leise, fontFamily = Mono,
-                )
             }
         }
 
@@ -143,7 +159,11 @@ fun MengeBildschirm(zustand: Zustand, treffer: Datenbank.Treffer) {
 
         item {
             Knopf(
-                if (gueltig) "Eintragen · $kcal kcal" else "Menge fehlt",
+                when {
+                    !gueltig -> "Menge fehlt"
+                    offen -> "Eintragen"
+                    else -> "Eintragen · $kcal kcal"
+                },
                 haupt = true,
                 an = gueltig,
                 modifier = Modifier.fillMaxWidth(),

@@ -278,6 +278,116 @@ class Rechner(private val zusammenhang: Context) {
         }
     }
 
+    // ---------- Abgleich ----------
+
+    /** Die Werte, die ein Eintrag inzwischen auf dem Rechner traegt. */
+    data class Nachtrag(val id: String, val name: String, val je100: Naehrwerte, val quelle: String)
+
+    /** Was der Rechner beim Abgleich zurueckschickt. */
+    data class Abgleich(
+        val ziel: Int?,
+        val eigene: List<Datenbank.Treffer>,
+        val nachtraege: List<Nachtrag>,
+        val einkauf: RechnerListe?,
+    )
+
+    /**
+     * Holt die eigene Datenbank und die Nachtraege der letzten Tage.
+     *
+     * Das ist der Rueckweg zur Warteschlange: dort geht ein Eintrag ohne
+     * Naehrwerte hin, hier kommen die geschaetzten zurueck. Null heisst nur
+     * „gerade nicht“ — kein Heimnetz, Rechner aus, oder ein Rechner, der den
+     * Abgleich noch nicht kennt. Nichts davon ist eine Meldung wert.
+     */
+    fun abgleich(): Abgleich? {
+        val adresse = adresse ?: return null
+        val token = token ?: return null
+        val roh = hole("http://$adresse/abgleich", "GET", null, token) ?: return null
+        return try {
+            val o = JSONObject(roh)
+            if (o.has("fehler")) return null
+            val eigene = o.optJSONArray("eigene") ?: JSONArray()
+            val nachtraege = o.optJSONArray("nachtraege") ?: JSONArray()
+            Abgleich(
+                einkauf = liesEinkauf(o.optJSONObject("einkauf"), o),
+                ziel = o.optInt("ziel").takeIf { it > 0 },
+                eigene = (0 until eigene.length()).mapNotNull {
+                    EigeneDatenbank.ausJson(eigene.getJSONObject(it))
+                },
+                nachtraege = (0 until nachtraege.length()).map {
+                    val n = nachtraege.getJSONObject(it)
+                    Nachtrag(
+                        id = n.optString("id"),
+                        name = n.optString("name"),
+                        je100 = Naehrwerte.ausJson(n.optJSONObject("je100") ?: JSONObject()),
+                        quelle = n.optString("quelle"),
+                    )
+                },
+            )
+        } catch (fehler: Exception) {
+            null
+        }
+    }
+
+    // ---------- Einkaufsliste ----------
+
+    /**
+     * Schickt, was im Laden passiert ist, und bekommt die Liste zurueck, wie
+     * sie danach am Rechner steht.
+     *
+     * Das ist der eine Weg, auf dem dieses Handy etwas aendert, das nicht sein
+     * eigener Eintrag ist. Gefahrlos bleibt es, weil jede Aenderung ihre Zeit
+     * mitbringt: am Rechner gewinnt die juengere und nicht die, die zuletzt
+     * ankam. Deshalb darf auch hier beliebig oft nachgeschickt werden.
+     */
+    fun sendeEinkauf(
+        aenderungen: List<Aenderung>,
+        neu: List<EinkaufsPosten>,
+        weg: List<String>,
+    ): RechnerListe? {
+        val adresse = adresse ?: return null
+        val token = token ?: return null
+
+        val rumpf = JSONObject()
+            .put("aenderungen", JSONArray().apply { aenderungen.forEach { put(it.alsJson()) } })
+            .put("neu", JSONArray().apply { neu.forEach { put(it.alsJson()) } })
+            .put("weg", JSONArray().apply { weg.forEach { put(it) } })
+            .toString()
+
+        val roh = hole("http://$adresse/einkauf", "POST", rumpf, token) ?: return null
+        return try {
+            val o = JSONObject(roh)
+            if (o.has("fehler")) return null
+            liesEinkauf(o.optJSONObject("einkauf"), o)
+        } catch (fehler: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Liest die Liste aus einer Antwort. Einheiten und Abteilungen stehen
+     * daneben und nicht darin — sie gehoeren zum Rechner und nicht zur Liste.
+     * Ein Rechner, der die Einkaufsliste noch nicht kennt, schickt nichts
+     * davon; dann bleibt hier alles, wie es ist.
+     */
+    private fun liesEinkauf(einkauf: JSONObject?, wurzel: JSONObject): RechnerListe? {
+        if (einkauf == null) return null
+        val roh = einkauf.optJSONArray("posten") ?: JSONArray()
+        val posten = (0 until roh.length()).mapNotNull {
+            EinkaufsPosten.ausJson(roh.getJSONObject(it))
+        }
+        val einheitenRoh = wurzel.optJSONArray("einheiten") ?: JSONArray()
+        val gruppenRoh = wurzel.optJSONArray("gruppen") ?: JSONArray()
+        return RechnerListe(
+            posten = posten,
+            stand = einkauf.optString("stand"),
+            einheiten = (0 until einheitenRoh.length()).mapNotNull {
+                Mengeneinheit.ausJson(einheitenRoh.getJSONObject(it))
+            },
+            gruppen = (0 until gruppenRoh.length()).map { gruppenRoh.getString(it) },
+        )
+    }
+
     // ---------- Werkzeug ----------
 
     private fun mitPort(eingabe: String): String {

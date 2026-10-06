@@ -20,10 +20,19 @@ Eintrag, die Tage davor als Zeilen. Der Block kommt vom Programm, nicht vom
 Menschen. Steht im Verlauf mehr als einer, gilt der letzte — die früheren sind
 überholt.
 
-Rechne mit den Zahlen, die dastehen, und erfinde keine dazu. Die Nährwerte
-kommen aus Open Food Facts, einer Sammlung von Freiwilligen: fehlt eine Angabe,
-steht dort eine Null. Sag dann, dass sie fehlt, statt sie zu schätzen — eine
-geschätzte Zahl sieht hier aus wie eine gemessene.
+Rechne mit den Zahlen, die dastehen, und erfinde keine dazu. Woher sie kommen,
+steht in der Spalte Quelle:
+
+- DB: aus Open Food Facts, einer Sammlung von Freiwilligen. Fehlt dort eine
+  Angabe, steht eine Null — sag dann, dass sie fehlt, statt sie zu schätzen.
+- selbst: am Handy von Hand eingetippt.
+- geschätzt: am Handy stand nur Name und Menge, die Nährwerte hat danach ein
+  Modell geschätzt. Nenn solche Zahlen geschätzt, wenn es auf sie ankommt.
+- eigene DB: am Handy aus der eigenen Datenbank gewählt. Dort liegt, was
+  früher schon einmal geschätzt wurde — auch diese Zahlen sind Schätzungen.
+- offen: noch ohne Nährwerte, die Schätzung steht aus. Der Eintrag zählt
+  vorläufig mit null — die Tagessumme ist dann zu niedrig, und das gehört in
+  die Antwort.
 
 Im Arbeitsordner liegt tagebuch.json mit dem vollständigen Verlauf. Geht eine
 Frage über die angehängten Tage hinaus, lies dort nach. Ändern kannst du
@@ -103,17 +112,41 @@ func heuteBlock(b *strings.Builder, s tagebuch.Sicht) {
 		return
 	}
 
-	b.WriteString("| Zeit | Mahlzeit | Produkt | Marke | Menge | kcal | Fett | KH | Zucker | Ballast | Eiweiß | Salz |\n")
-	b.WriteString("|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+	b.WriteString("| Zeit | Mahlzeit | Produkt | Marke | Menge | kcal | Fett | KH | Zucker | Ballast | Eiweiß | Salz | Quelle |\n")
+	b.WriteString("|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|\n")
+	offen := 0
 	for _, z := range heute.Zeilen {
 		g := z.Gesamt
-		fmt.Fprintf(b, "| %s | %s | %s | %s | %s %s | %d | %s | %s | %s | %s | %s | %s |\n",
+		kcal := strconv.Itoa(z.Kcal)
+		if z.Quelle == tagebuch.QuelleOffen {
+			kcal = "?"
+			offen++
+		}
+		fmt.Fprintf(b, "| %s | %s | %s | %s | %s %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
 			z.Uhr, mahlzeit(z.Mahlzeit), feld(z.Name), feld(z.Marke),
-			gr(z.Menge), z.Einheit, z.Kcal,
+			gr(z.Menge), z.Einheit, kcal,
 			gr(g.Fett), gr(g.Kohlenhydrate), gr(g.Zucker),
-			gr(g.Ballaststoffe), gr(g.Eiweiss), gr(g.Salz))
+			gr(g.Ballaststoffe), gr(g.Eiweiss), gr(g.Salz), quelle(z.Quelle))
 	}
 	b.WriteString("\n")
+	if offen > 0 {
+		fmt.Fprintf(b, "%s ohne Nährwerte — die Summe oben ist deshalb zu niedrig.\n\n", anzahl(offen, "Eintrag", "Einträge"))
+	}
+}
+
+// quelle schreibt die Herkunft so, wie der Systemtext sie erklaert.
+func quelle(q string) string {
+	switch q {
+	case tagebuch.QuelleHand:
+		return "selbst"
+	case tagebuch.QuelleKI:
+		return "geschätzt"
+	case tagebuch.QuelleEigen:
+		return "eigene DB"
+	case tagebuch.QuelleOffen:
+		return "offen"
+	}
+	return "DB"
 }
 
 func tageBlock(b *strings.Builder, s tagebuch.Sicht) {

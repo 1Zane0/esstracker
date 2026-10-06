@@ -114,6 +114,12 @@ private fun Zaehler(zustand: Zustand) {
                 zustand.heute.isEmpty() -> "noch nichts heute"
                 rest >= 0 -> "$rest kcal übrig"
                 else -> "${-rest} kcal darüber"
+            } + when (val offen = zustand.offenHeute) {
+                // Die Zahl oben ist dann zu niedrig — das soll dastehen, bevor
+                // jemand ihr glaubt.
+                0 -> ""
+                1 -> " · 1 Eintrag ohne Nährwerte"
+                else -> " · $offen ohne Nährwerte"
             },
             fontSize = 12.5.sp,
             color = if (zustand.heute.isEmpty()) Leise else Gedaempft,
@@ -215,6 +221,7 @@ private fun Eintragszeile(eintrag: Eintrag, zustand: Zustand) {
                     buildString {
                         if (eintrag.marke.isNotEmpty()) append(eintrag.marke).append(" · ")
                         append("${eintrag.menge.toInt()} ${eintrag.einheit}")
+                        if (eintrag.offen) append(" · Werte folgen")
                     },
                     fontSize = 11.5.sp, color = Leise,
                     maxLines = 1,
@@ -223,8 +230,9 @@ private fun Eintragszeile(eintrag: Eintrag, zustand: Zustand) {
             }
             Breite(10)
             Text(
-                "${eintrag.kcal().toInt()}",
-                fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tinte,
+                if (eintrag.offen) "?" else "${eintrag.kcal().toInt()}",
+                fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                color = if (eintrag.offen) Leise else Tinte,
                 fontFamily = Mono,
             )
             Text(" kcal", fontSize = 11.sp, color = Leise)
@@ -239,8 +247,11 @@ private fun Eintragszeile(eintrag: Eintrag, zustand: Zustand) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "${eintrag.je100.kcal.toInt()} kcal je 100 ${eintrag.einheit}" +
-                            if (eintrag.barcode.isNotEmpty()) " · ${eintrag.barcode}" else "",
+                        when {
+                            eintrag.offen -> "Nährwerte schätzt Claude am Rechner"
+                            eintrag.geschaetzt -> "${eintrag.je100.kcal.toInt()} kcal je 100 ${eintrag.einheit} · geschätzt"
+                            else -> "${eintrag.je100.kcal.toInt()} kcal je 100 ${eintrag.einheit}"
+                        } + if (eintrag.barcode.isNotEmpty()) " · ${eintrag.barcode}" else "",
                         fontSize = 11.5.sp, color = Gedaempft, fontFamily = Mono,
                     )
                     Text(

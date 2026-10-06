@@ -23,6 +23,22 @@ type Sicht struct {
 	Raster   []Feld    `json:"raster"`
 	Geraete  []Geraet  `json:"geraete"`
 	Kopplung Kopplung  `json:"kopplung"`
+
+	// Offen sind die Eintraege ohne Naehrwerte, ueber alle Tage — aelteste
+	// zuerst. Sie zaehlen ueberall mit null, bis Claude sie geschaetzt hat.
+	Offen      []Zeile      `json:"offen"`
+	Schaetzung SchaetzStand `json:"schaetzung"`
+	Eigene     []Eigenes    `json:"eigene"` // die eigene Datenbank, nach Namen
+
+	// Einkauf ist die Einkaufsliste, Plan der Stand des Schreibens daran.
+	Einkauf Einkauf   `json:"einkauf"`
+	Plan    PlanStand `json:"plan"`
+	// Einheiten und Abteilungen gehen mit, damit die Oberflaeche sie nicht
+	// zweimal kennt: die Schrittweite des Plusknopfs steht dann an einer
+	// Stelle, und ein Fenster von gestern kann keine Einheit anbieten, die es
+	// hier nicht mehr gibt.
+	Einheiten []Einheit `json:"einheiten"`
+	Gruppen   []string  `json:"gruppen"`
 }
 
 // Zahlen ist der heutige Stand — die einzige Rechnung, die auch das Handy
@@ -91,6 +107,33 @@ type Kopplung struct {
 	Wort     string   `json:"wort,omitempty"`
 	Adressen []string `json:"adressen"`
 	Port     int      `json:"port"`
+}
+
+// SchaetzStand sagt, ob Claude gerade Naehrwerte schaetzt und wie es zuletzt
+// ausging. Er steht hier und nicht beim Schaetzer, aus demselben Grund wie die
+// Kopplung: die Sicht soll ihn tragen, ohne dass das Tagebuch den Schaetzer
+// kennen muss.
+type SchaetzStand struct {
+	Bereit  bool              `json:"bereit"`
+	Hinweis string            `json:"hinweis,omitempty"`
+	Laeuft  bool              `json:"laeuft"`
+	Seit    string            `json:"seit,omitempty"`   // RFC3339, solange es laeuft
+	Anzahl  int               `json:"anzahl,omitempty"` // wie viele Eintraege im laufenden Durchgang
+	Fehler  string            `json:"fehler,omitempty"` // vom letzten Durchgang
+	Zuletzt string            `json:"zuletzt,omitempty"`
+	Unklar  map[string]string `json:"unklar"` // ID -> warum Claude nichts sagen wollte
+}
+
+// PlanStand sagt, ob Claude gerade an der Einkaufsliste schreibt und wie es
+// zuletzt ausging — dasselbe Muster wie SchaetzStand und aus demselben Grund.
+type PlanStand struct {
+	Bereit  bool   `json:"bereit"`
+	Hinweis string `json:"hinweis,omitempty"`
+	Laeuft  bool   `json:"laeuft"`
+	Seit    string `json:"seit,omitempty"`   // RFC3339, solange es laeuft
+	Wunsch  string `json:"wunsch,omitempty"` // woran gerade geschrieben wird
+	Fehler  string `json:"fehler,omitempty"` // vom letzten Versuch
+	Zuletzt string `json:"zuletzt,omitempty"`
 }
 
 // Sicht baut den Stand.
@@ -177,6 +220,22 @@ func (b *Buch) Sicht() Sicht {
 		})
 	}
 
+	s.Offen = []Zeile{}
+	for _, e := range b.Eintraege {
+		if e.Quelle == QuelleOffen {
+			s.Offen = append(s.Offen, Zeile{Eintrag: e, Uhr: uhr(e.Zeit)})
+		}
+	}
+	s.Schaetzung.Unklar = map[string]string{}
+
+	s.Eigene = append([]Eigenes{}, b.Eigene...)
+	sort.SliceStable(s.Eigene, func(i, j int) bool {
+		return strings.ToLower(s.Eigene[i].Name) < strings.ToLower(s.Eigene[j].Name)
+	})
+
+	s.Einkauf = b.einkaufKopie()
+	s.Einheiten = Einheiten
+	s.Gruppen = Gruppen
 	s.Produkte = produkte(b.Eintraege)
 	s.Raster = raster(kcalAmTag, b.Ziel, jetzt)
 	return s
@@ -200,6 +259,11 @@ func produkte(eintraege []Eintrag) []Produkt {
 			})
 			i = len(liste) - 1
 			stelle[schluessel] = i
+		}
+		// Der juengste Wert gilt: ein Eintrag, der erst offen war und dann
+		// geschaetzt wurde, soll nicht mit seiner Null stehen bleiben.
+		if e.Je100.Kcal > 0 {
+			liste[i].Kcal100 = e.Je100.Kcal
 		}
 		liste[i].Anzahl++
 		liste[i].Menge += e.Menge

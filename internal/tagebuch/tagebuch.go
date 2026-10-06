@@ -4,6 +4,11 @@
 // Ereignis in der Vergangenheit. Geaendert wird nur, was nicht zum Ereignis
 // gehoert — das Tagesziel und die gekoppelten Geraete.
 //
+// Mit einer Ausnahme: die Naehrwerte eines offenen Eintrags. Wer am Handy nur
+// Name und Menge weiss, schickt ihn ohne Werte, und Claude traegt sie hier
+// nach. Was gegessen wurde, wann und wie viel, bleibt dabei unberuehrt; die
+// Quelle "ki" sagt fuer immer, dass die Zahl geschaetzt ist.
+//
 // Zwei Entscheidungen, die den Rest einfach machen:
 //
 // Erstens traegt jeder Eintrag eine ID, die das Handy vergibt. Ein Eintrag,
@@ -78,6 +83,17 @@ func (n Naehrwerte) Plus(m Naehrwerte) Naehrwerte {
 	}
 }
 
+// Woher die Naehrwerte eines Eintrags stammen. Die Unterscheidung ist der
+// Grund, warum eine geschaetzte Zahl hier neben einer nachgeschlagenen stehen
+// darf: man sieht ihr an, was sie ist.
+const (
+	QuelleOFF   = "off"   // aus Open Food Facts nachgeschlagen
+	QuelleHand  = "hand"  // am Handy selbst eingetippt
+	QuelleOffen = "offen" // nur Name und Menge — die Naehrwerte fehlen noch
+	QuelleKI    = "ki"    // von Claude aus Name und Menge geschaetzt
+	QuelleEigen = "eigen" // am Handy aus der eigenen Datenbank gewaehlt
+)
+
 // Eintrag ist ein Produkt zu einer Zeit.
 type Eintrag struct {
 	ID       string `json:"id"`       // vom Handy vergeben, entscheidet ueber Doppelte
@@ -92,15 +108,56 @@ type Eintrag struct {
 	Einheit string  `json:"einheit"` // g | ml
 
 	Je100  Naehrwerte `json:"je100"`
-	Quelle string     `json:"quelle"` // off | hand
+	Quelle string     `json:"quelle"` // off | hand | offen | ki | eigen
 
 	// Herkunft, damit spaeter nachvollziehbar ist, wo eine Zahl herkommt.
 	Geraet    string `json:"geraet,omitempty"`
 	Empfangen string `json:"empfangen"` // wann dieser Rechner ihn bekam
+
+	// Schaetzung haelt fest, wie aus einem offenen Eintrag ein gezaehlter
+	// wurde — nur bei Quelle "ki".
+	Schaetzung *Schaetzung `json:"schaetzung,omitempty"`
+	// Vorher sind die Werte, die ein Eintrag trug, bevor er zum Schaetzen
+	// freigegeben wurde. Nur gesetzt, wenn es welche gab.
+	Vorher *Vorher `json:"vorher,omitempty"`
+}
+
+// Schaetzung ist das, was Claude zu einem offenen Eintrag gesagt hat.
+type Schaetzung struct {
+	Zeit        string `json:"zeit"`        // wann geschaetzt
+	Modell      string `json:"modell"`      // welches Modell
+	Sicherheit  string `json:"sicherheit"`  // hoch | mittel | niedrig
+	Begruendung string `json:"begruendung"` // worauf die Zahl beruht, ein Satz
+	NameVorher  string `json:"nameVorher,omitempty"`
+}
+
+// Vorher ist der Stand eines Eintrags, bevor er nachgeschaetzt wurde.
+type Vorher struct {
+	Quelle string     `json:"quelle"`
+	Je100  Naehrwerte `json:"je100"`
 }
 
 // Gesamt sind die Naehrwerte der gegessenen Menge.
 func (e Eintrag) Gesamt() Naehrwerte { return e.Je100.Mal(e.Menge) }
+
+// Eigenes ist ein Lebensmittel in der eigenen Datenbank.
+//
+// Dort landet, was Claude einmal geschaetzt hat. Das Handy holt sich die Liste
+// und findet beim naechsten Mal "Kulturheidelbeeren" in der Suche oder den
+// Strichcode beim Scannen — mit Werten, ohne dass wieder geschaetzt werden
+// muss. Wer denselben Doener zweimal isst, bekommt so auch zweimal dieselbe
+// Zahl.
+type Eigenes struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Marke       string     `json:"marke,omitempty"`
+	Barcode     string     `json:"barcode,omitempty"`
+	Einheit     string     `json:"einheit"`
+	Je100       Naehrwerte `json:"je100"`
+	Sicherheit  string     `json:"sicherheit,omitempty"`
+	Begruendung string     `json:"begruendung,omitempty"`
+	Stand       string     `json:"stand"` // wann zuletzt geschaetzt
+}
 
 // Geraet ist ein gekoppeltes Handy.
 type Geraet struct {
@@ -119,6 +176,10 @@ type Buch struct {
 	Eintraege []Eintrag `json:"eintraege"`
 	Ziel      int       `json:"ziel"`
 	Geraete   []Geraet  `json:"geraete"`
+	Eigene    []Eigenes `json:"eigene"`
+	// Einkauf ist die Einkaufsliste — der eine Teil, der sich aendert und der
+	// vom Rechner zum Handy laeuft statt umgekehrt (siehe einkauf.go).
+	Einkauf Einkauf `json:"einkauf"`
 }
 
 // Oeffne laedt das Tagebuch von der Platte.
@@ -129,6 +190,18 @@ func Oeffne() (*Buch, error) {
 	}
 	if b.Ziel <= 0 {
 		b.Ziel = ZielVorgabe
+	}
+	// Ein "nachgeschlagener" Eintrag ohne Kilokalorien kam von einem neuen
+	// Handy an einen alten Rechner, der "offen" noch nicht kannte und "off"
+	// daraus machte. Aus Open Food Facts kommt so etwas nie — die Suche am
+	// Handy laesst Produkte ohne Energie gar nicht durch. Also ist er offen.
+	for i := range b.Eintraege {
+		if e := &b.Eintraege[i]; e.Quelle == QuelleOFF && e.Je100.Kcal <= 0 {
+			e.Quelle = QuelleOffen
+		}
+	}
+	if b.Einkauf.Posten == nil {
+		b.Einkauf.Posten = []Posten{}
 	}
 	return b, nil
 }
@@ -210,9 +283,25 @@ func pruefe(e *Eintrag) error {
 	if !mahlzeiten[e.Mahlzeit] {
 		e.Mahlzeit = "snack"
 	}
-	if e.Quelle != "hand" {
-		e.Quelle = "off"
+	if e.Je100.Kcal < 0 {
+		return errors.New("Kilokalorien duerfen nicht negativ sein")
 	}
+
+	// Die Quelle bestimmt der Rechner, nicht das Handy. Selbst Eingetipptes
+	// ohne Kilokalorien ist offen, gleich was dabei stand — sonst zaehlte es
+	// still als null. Und ein Handy kann nicht behaupten, Claude haette schon
+	// geschaetzt: das passiert nur hier.
+	switch {
+	case e.Je100.Kcal <= 0 && e.Quelle != QuelleOFF && e.Quelle != "":
+		e.Quelle = QuelleOffen
+	case e.Quelle == QuelleOffen:
+		e.Quelle = QuelleHand
+	case e.Quelle == QuelleHand || e.Quelle == QuelleEigen:
+	default:
+		e.Quelle = QuelleOFF
+	}
+	e.Schaetzung = nil
+	e.Vorher = nil
 	return nil
 }
 
@@ -232,6 +321,230 @@ func (b *Buch) Loeschen(id string) error {
 		}
 	}
 	return errors.New("kein Eintrag mit dieser ID")
+}
+
+// ---------- Schaetzen ----------
+
+// Offene sind die Eintraege, denen noch Naehrwerte fehlen — aelteste zuerst.
+// Als Kopie: der Schaetzer arbeitet minutenlang damit, und das Buch darf sich
+// in der Zeit weiter aendern.
+func (b *Buch) Offene() []Eintrag {
+	b.sperre.Lock()
+	defer b.sperre.Unlock()
+
+	var liste []Eintrag
+	for _, e := range b.Eintraege {
+		if e.Quelle == QuelleOffen {
+			liste = append(liste, e)
+		}
+	}
+	return liste
+}
+
+// Bekannte sind Produkte, deren Werte schon feststehen — nachgeschlagen oder
+// frueher geschaetzt, das Neueste zuerst. Selbst Eingetipptes zaehlt nicht
+// dazu: dort steht mitunter eine 1, nur weil ein Feld nicht leer bleiben
+// durfte, und die soll keine neue Schaetzung anstecken.
+func (b *Buch) Bekannte(hoechstens int) []Eintrag {
+	b.sperre.Lock()
+	defer b.sperre.Unlock()
+
+	gesehen := map[string]bool{}
+	var liste []Eintrag
+	for i := len(b.Eintraege) - 1; i >= 0 && len(liste) < hoechstens; i-- {
+		e := b.Eintraege[i]
+		if (e.Quelle != QuelleOFF && e.Quelle != QuelleKI && e.Quelle != QuelleEigen) || e.Je100.Kcal <= 0 {
+			continue
+		}
+		schluessel := strings.ToLower(e.Name + "|" + e.Marke)
+		if gesehen[schluessel] {
+			continue
+		}
+		gesehen[schluessel] = true
+		liste = append(liste, e)
+	}
+	return liste
+}
+
+// Freigeben macht einen Eintrag wieder offen, damit Claude ihn schaetzt —
+// fuer das, was mit einer Verlegenheitszahl am Handy eingetragen wurde.
+//
+// Die alten Werte bleiben unter Vorher liegen. Nur beim ersten Mal: wer eine
+// Schaetzung ein zweites Mal verwirft, will die urspruengliche Eingabe
+// nachlesen koennen und nicht die erste Schaetzung.
+func (b *Buch) Freigeben(id string) error {
+	b.sperre.Lock()
+	defer b.sperre.Unlock()
+
+	for i := range b.Eintraege {
+		e := &b.Eintraege[i]
+		if e.ID != id {
+			continue
+		}
+		switch e.Quelle {
+		case QuelleOffen:
+			return nil
+		case QuelleOFF:
+			return errors.New("die Werte kommen aus Open Food Facts — da gibt es nichts zu schätzen")
+		}
+		if e.Vorher == nil && e.Quelle == QuelleHand {
+			e.Vorher = &Vorher{Quelle: e.Quelle, Je100: e.Je100}
+		}
+		if e.Schaetzung != nil && e.Schaetzung.NameVorher != "" {
+			e.Name = e.Schaetzung.NameVorher
+		}
+		e.Je100 = Naehrwerte{}
+		e.Quelle = QuelleOffen
+		e.Schaetzung = nil
+		return b.sichern()
+	}
+	return errors.New("kein Eintrag mit dieser ID")
+}
+
+// Schaetzen traegt Claudes Werte in einen offenen Eintrag ein.
+//
+// Was am Handy schon angegeben war, bleibt stehen: eine Null heisst dort
+// "weiss ich nicht", alles andere hat ein Mensch hingeschrieben. Ist der
+// Eintrag inzwischen geloescht oder nicht mehr offen, passiert nichts — die
+// Schaetzung kam dann schlicht zu spaet.
+func (b *Buch) Schaetzen(id string, je100 Naehrwerte, name string, s Schaetzung) error {
+	b.sperre.Lock()
+	defer b.sperre.Unlock()
+
+	for i := range b.Eintraege {
+		e := &b.Eintraege[i]
+		if e.ID != id {
+			continue
+		}
+		if e.Quelle != QuelleOffen {
+			return errors.New("der Eintrag ist nicht mehr offen")
+		}
+		if je100.Kcal <= 0 {
+			return errors.New("Schätzung ohne Kilokalorien")
+		}
+		e.Je100 = behalte(e.Je100, je100)
+		e.Je100.KJ = e.Je100.Kcal * 4.184
+		name = strings.TrimSpace(name)
+		if name != "" && name != e.Name {
+			s.NameVorher = e.Name
+			e.Name = name
+		}
+		e.Quelle = QuelleKI
+		e.Schaetzung = &s
+		b.merkeEigenes(*e)
+		return b.sichern()
+	}
+	return errors.New("kein Eintrag mit dieser ID")
+}
+
+// merkeEigenes legt eine Schaetzung in der eigenen Datenbank ab. Dasselbe
+// Lebensmittel — gleicher Strichcode, sonst gleicher Name und gleiche Marke —
+// steht dort nur einmal, mit der juengsten Schaetzung. Aufrufer haelt die
+// Sperre und sichert.
+func (b *Buch) merkeEigenes(e Eintrag) {
+	neu := Eigenes{
+		ID: "e-" + e.ID, Name: e.Name, Marke: e.Marke, Barcode: e.Barcode,
+		Einheit: e.Einheit, Je100: e.Je100, Stand: e.Schaetzung.Zeit,
+		Sicherheit: e.Schaetzung.Sicherheit, Begruendung: e.Schaetzung.Begruendung,
+	}
+	for i, alt := range b.Eigene {
+		gleich := alt.Barcode != "" && alt.Barcode == neu.Barcode
+		if alt.Barcode == "" || neu.Barcode == "" {
+			gleich = strings.EqualFold(alt.Name, neu.Name) && strings.EqualFold(alt.Marke, neu.Marke)
+		}
+		if gleich {
+			neu.ID = alt.ID
+			if neu.Barcode == "" {
+				neu.Barcode = alt.Barcode
+			}
+			b.Eigene[i] = neu
+			return
+		}
+	}
+	b.Eigene = append(b.Eigene, neu)
+}
+
+// EigenesLoeschen nimmt ein Lebensmittel aus der eigenen Datenbank. Die
+// Eintraege, die damit gezaehlt wurden, behalten ihre Werte.
+func (b *Buch) EigenesLoeschen(id string) error {
+	b.sperre.Lock()
+	defer b.sperre.Unlock()
+
+	for i, e := range b.Eigene {
+		if e.ID == id {
+			b.Eigene = append(b.Eigene[:i], b.Eigene[i+1:]...)
+			return b.sichern()
+		}
+	}
+	return errors.New("kein Lebensmittel mit dieser ID")
+}
+
+// AbgleichTage ist, wie weit der Abgleich zurueckreicht — so weit, wie das
+// Handy Eintraege aufhebt, und einen Tag Luft.
+const AbgleichTage = 8
+
+// Abgleich ist, was das Handy vom Rechner zurueckbekommt.
+type Abgleich struct {
+	Ziel   int       `json:"ziel"`
+	Eigene []Eigenes `json:"eigene"`
+	// Einkauf ist die Liste, wie sie hier steht. Sie geht als Ganzes mit —
+	// eine Einkaufsliste ist kurz, und ein Teilabgleich waere die Stelle, an
+	// der im Laden ein Posten fehlt, den jemand am Rechner dazugeschrieben hat.
+	Einkauf Einkauf `json:"einkauf"`
+	// Einheiten und Abteilungen gehen mit, damit das Handy sie nicht zweimal
+	// kennt: das Plus dort gibt dann denselben Schritt wie das Plus hier.
+	Einheiten []Einheit `json:"einheiten"`
+	Gruppen   []string  `json:"gruppen"`
+	// Nachtraege sind die Eintraege der letzten Tage, deren Werte hier
+	// entstanden sind oder wieder offen stehen. Das Handy uebernimmt sie fuer
+	// die IDs, die es noch hat — damit auch dort die Zahl von heute stimmt.
+	Nachtraege []Nachtrag `json:"nachtraege"`
+}
+
+// Nachtrag sind die Werte eines Eintrags, wie sie jetzt auf dem Rechner stehen.
+type Nachtrag struct {
+	ID     string     `json:"id"`
+	Name   string     `json:"name"`
+	Je100  Naehrwerte `json:"je100"`
+	Quelle string     `json:"quelle"`
+}
+
+// Abgleichen baut den Abgleich fuers Handy.
+func (b *Buch) Abgleichen() Abgleich {
+	b.sperre.Lock()
+	defer b.sperre.Unlock()
+
+	a := Abgleich{
+		Ziel: b.Ziel, Eigene: append([]Eigenes{}, b.Eigene...),
+		Einkauf: b.einkaufKopie(), Einheiten: Einheiten, Gruppen: Gruppen,
+		Nachtraege: []Nachtrag{},
+	}
+	grenze := time.Now().AddDate(0, 0, -AbgleichTage).Format("2006-01-02")
+	for _, e := range b.Eintraege {
+		if e.Tag < grenze || (e.Quelle != QuelleKI && e.Quelle != QuelleOffen) {
+			continue
+		}
+		a.Nachtraege = append(a.Nachtraege, Nachtrag{ID: e.ID, Name: e.Name, Je100: e.Je100, Quelle: e.Quelle})
+	}
+	return a
+}
+
+// behalte nimmt je Feld die angegebene Zahl und nur fuer die Nullen die
+// geschaetzte.
+func behalte(da, neu Naehrwerte) Naehrwerte {
+	w := func(a, b float64) float64 {
+		if a > 0 {
+			return a
+		}
+		return b
+	}
+	return Naehrwerte{
+		Kcal: w(da.Kcal, neu.Kcal), KJ: w(da.KJ, neu.KJ),
+		Fett: w(da.Fett, neu.Fett), Gesaettigt: w(da.Gesaettigt, neu.Gesaettigt),
+		Kohlenhydrate: w(da.Kohlenhydrate, neu.Kohlenhydrate), Zucker: w(da.Zucker, neu.Zucker),
+		Ballaststoffe: w(da.Ballaststoffe, neu.Ballaststoffe), Eiweiss: w(da.Eiweiss, neu.Eiweiss),
+		Salz: w(da.Salz, neu.Salz),
+	}
 }
 
 // ZielSetzen aendert das Tagesziel in Kilokalorien.

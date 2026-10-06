@@ -201,7 +201,7 @@ nav .zahl.leer{display:none}
 }
 .eintrag .kcal b{font-size:15px;font-weight:600;letter-spacing:-.02em}
 .eintrag .kcal span{font-size:11px;color:var(--leise);margin-left:3px}
-.eintrag .werkzeuge{display:flex;gap:2px;opacity:0;flex:none;width:30px}
+.eintrag .werkzeuge{display:flex;gap:2px;opacity:0;flex:none;width:60px;justify-content:flex-end}
 .eintrag:hover .werkzeuge,.eintrag:focus-within .werkzeuge{opacity:1}
 
 /* Der Strich unter einem Eintrag zeigt, welchen Anteil am Tagesziel er hat.
@@ -212,6 +212,26 @@ nav .zahl.leer{display:none}
 }
 .eintrag{position:relative}
 .eintrag .anteil i{display:block;height:100%;background:var(--stufe3);border-radius:1px}
+
+/* Woher die Zahl kommt, wenn sie nicht nachgeschlagen ist. Ein Rahmen statt
+   einer Farbe: geschaetzt ist kein Alarm, nur eine andere Sorte Zahl. */
+.quelle{
+  font-style:normal;font-size:10.5px;color:var(--gedaempft);
+  border:1px solid var(--rahmen-hell);border-radius:4px;padding:0 5px;margin-right:6px;
+}
+.eintrag.offen .kcal b{color:var(--leise)}
+
+/* ---------- Ohne Naehrwerte ---------- */
+.offenkarte{border-color:var(--rahmen-hell);background:var(--flaeche-hoch)}
+.offenkarte .lage{display:flex;align-items:center;gap:9px;color:var(--gedaempft);font-size:12.5px;margin:0 0 10px}
+.offenkarte .lage .schlag{
+  width:7px;height:7px;border-radius:50%;background:var(--akzent);flex:none;
+  animation:schlag 1.4s ease-in-out infinite;
+}
+.offenkarte .lage.fehler{color:var(--tinte);font-family:var(--mono);font-size:12px;white-space:pre-wrap}
+.offenkarte .eintrag:hover{background:var(--flaeche)}
+.offenkarte .schub{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+.erklaerung{color:var(--leise);font-size:12.5px;margin:-4px 0 10px;max-width:70ch}
 
 /* ---------- Naehrwerte ---------- */
 
@@ -301,6 +321,86 @@ nav .zahl.leer{display:none}
 .produkt .werte{display:flex;gap:13px;flex:none;font-size:11.5px;color:var(--leise);font-variant-numeric:tabular-nums}
 .produkt .werte div{text-align:right;min-width:52px}
 .produkt .werte b{display:block;color:var(--tinte);font-size:13.5px;font-weight:600}
+
+/* ---------- Einkauf ---------- */
+
+/* Eine Zeile ist: Haken, was, wie viel, weg. Die Menge steht rechts in
+   Monospace, damit die Zahlen untereinander stehen — und sie ist der einzige
+   Wert im Programm, den man hier direkt verstellt. Preise gibt es nicht. */
+.plankarte .lage{display:flex;align-items:center;gap:9px;color:var(--gedaempft);font-size:12.5px;margin:12px 0 0;min-height:18px}
+.plankarte .lage .schlag{
+  width:7px;height:7px;border-radius:50%;background:var(--akzent);flex:none;
+  animation:schlag 1.4s ease-in-out infinite;
+}
+.plankarte .lage.fehler{color:var(--tinte);font-family:var(--mono);font-size:12px;white-space:pre-wrap}
+.plankarte .vorschlaege{margin-top:12px}
+
+.schalter{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12.5px;color:var(--gedaempft);cursor:pointer}
+.schalter input{accent-color:var(--akzent);width:14px;height:14px;margin:0;cursor:pointer}
+.schalter input:disabled+span{color:var(--leise)}
+
+.posten{
+  display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:8px;
+  border-bottom:1px solid var(--rahmen);
+}
+.posten:last-child{border-bottom:none}
+.posten:hover{background:var(--flaeche-hoch)}
+
+.posten .haken{
+  flex:none;width:19px;height:19px;border-radius:5px;padding:0;
+  border:1px solid var(--rahmen-hell);background:var(--grund);
+  display:flex;align-items:center;justify-content:center;color:#0A0A0B;
+}
+.posten .haken:hover{border-color:var(--akzent)}
+.posten .haken[aria-pressed="true"]{background:var(--akzent);border-color:var(--akzent)}
+
+.posten .was{flex:1;min-width:0;cursor:pointer}
+.posten .was b{display:block;font-size:14px;font-weight:500}
+.posten .was span{display:block;font-size:11.5px;color:var(--leise)}
+
+/* Abgehakt bleibt stehen und wird blass: eine Zeile, die verschwindet, nimmt
+   die Moeglichkeit mit, den Haken zurueckzunehmen. */
+.posten.erledigt .was b{text-decoration:line-through;color:var(--leise);font-weight:400}
+.posten.erledigt .was span,.posten.erledigt .menge{color:var(--leise)}
+.posten.erledigt .menge .wert{color:var(--leise)}
+
+.posten .menge{display:flex;align-items:center;gap:2px;flex:none}
+.posten .menge .stufe{
+  width:24px;height:24px;padding:0;border-radius:6px;border:1px solid transparent;
+  background:transparent;color:var(--gedaempft);display:flex;align-items:center;justify-content:center;
+}
+.posten .menge .stufe:hover{background:var(--flaeche);border-color:var(--rahmen-hell);color:var(--tinte)}
+.posten .menge .wert{
+  min-width:78px;text-align:center;padding:3px 6px;border:1px solid transparent;border-radius:6px;
+  background:transparent;color:var(--tinte);font-family:var(--mono);font-size:12.5px;
+  font-variant-numeric:tabular-nums;
+}
+.posten .menge .wert:hover{border-color:var(--rahmen-hell);background:var(--flaeche)}
+.posten .menge input{
+  width:72px;padding:3px 6px;border:1px solid var(--akzent);border-radius:6px;
+  background:var(--grund);color:var(--tinte);font-family:var(--mono);font-size:12.5px;outline:none;
+}
+.posten .menge select{
+  padding:3px 4px;border:1px solid var(--rahmen-hell);border-radius:6px;
+  background:var(--grund);color:var(--tinte);font-family:inherit;font-size:12px;outline:none;
+}
+.posten .werkzeuge{display:flex;gap:2px;opacity:0;flex:none;width:32px;justify-content:flex-end}
+.posten:hover .werkzeuge,.posten:focus-within .werkzeuge{opacity:1}
+
+/* Die Zeile, mit der etwas dazukommt, das Claude nicht wusste. */
+.neuform{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.neuform input,.neuform select{
+  border:1px solid var(--rahmen);border-radius:var(--r-knopf);background:var(--grund);
+  color:var(--tinte);font-family:inherit;font-size:13px;padding:7px 10px;outline:none;
+}
+.neuform input[name="name"]{flex:1 1 220px;min-width:140px}
+.neuform input[name="menge"]{width:74px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.neuform input:focus,.neuform select:focus{border-color:var(--akzent)}
+.neuform input::placeholder{color:var(--leise)}
+.neuform .knopf{padding:7px 11px}
+
+#einkauf-schub{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.randnotiz{font-size:11.5px;color:var(--leise)}
 
 /* ---------- Handy ---------- */
 

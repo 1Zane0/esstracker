@@ -31,6 +31,14 @@
   <symbol id="i-ki" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
     <path d="M2.2 4.8A2.4 2.4 0 0 1 4.6 2.4h6.8a2.4 2.4 0 0 1 2.4 2.4v4.2a2.4 2.4 0 0 1-2.4 2.4H6.9l-3.2 2.3a.35.35 0 0 1-.55-.28V11a2.4 2.4 0 0 1-.95-1.92z"/>
     <path d="M8 4.7l.72 1.83L10.55 7.25 8.72 7.97 8 9.8l-.72-1.83L5.45 7.25 7.28 6.53z"/></symbol>
+  <symbol id="i-einkauf" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1.6 2.2h1.9l1.9 7.4h6.4l1.7-5.3H4.6"/><circle cx="6.1" cy="13" r="1.1"/><circle cx="11.4" cy="13" r="1.1"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+    <path d="M8 4.2v7.6M4.2 8h7.6"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+    <path d="M4.2 8h7.6"/></symbol>
+  <symbol id="i-haken" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.4 8.4l3 3 6.2-7"/></symbol>
   <symbol id="i-neu" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
     <path d="M8 3.4v9.2M3.4 8h9.2"/></symbol>
   <symbol id="i-stopp" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
@@ -66,6 +74,7 @@
       <button data-seite="heute" aria-current="page"><svg width="16" height="16"><use href="#i-heute"/></svg>Heute<span class="zahl leer" id="zahl-heute"></span></button>
       <button data-seite="verlauf"><svg width="16" height="16"><use href="#i-verlauf"/></svg>Verlauf</button>
       <button data-seite="produkte"><svg width="16" height="16"><use href="#i-produkte"/></svg>Produkte<span class="zahl leer" id="zahl-produkte"></span></button>
+      <button data-seite="einkauf"><svg width="16" height="16"><use href="#i-einkauf"/></svg>Einkauf<span class="zahl leer" id="zahl-einkauf"></span></button>
       <button data-seite="handy"><svg width="16" height="16"><use href="#i-handy"/></svg>Handy<span class="zahl leer" id="zahl-handy"></span></button>
       <button data-seite="ki"><svg width="16" height="16"><use href="#i-ki"/></svg>KI<span class="zahl leer" id="zahl-ki"></span></button>
     </nav>
@@ -86,6 +95,10 @@
     <main class="blatt">
 
       <section class="seite an" id="seite-heute">
+        <!-- Nur da, wenn etwas ohne Naehrwerte angekommen ist. Solche Eintraege
+             zaehlen mit null, und das soll man sehen, bevor man der Summe traut. -->
+        <div class="karte offenkarte" id="offen-karte" hidden></div>
+
         <div class="karte">
           <h2>Heute<span class="zusatz" id="heute-zusatz"></span></h2>
           <dl class="naehrwerte" id="heute-naehrwerte"></dl>
@@ -128,12 +141,55 @@
       </section>
 
       <section class="seite" id="seite-produkte">
-        <header>
-          <p>Alles, was je eingetragen wurde — gebündelt über den Barcode, wo es
-             einen gibt, sonst über Name und Marke. Häufigstes zuerst.</p>
-        </header>
         <div class="karte">
+          <h2>Eigene Datenbank<span class="zusatz" id="eigene-zusatz"></span></h2>
+          <p class="erklaerung">Was Claude einmal geschätzt hat, steht hier und geht beim
+             nächsten Abgleich aufs Handy. Dort findet die Suche es neben Open Food
+             Facts, und ein Strichcode wird ohne Netz erkannt.</p>
+          <div id="eigene-liste"></div>
+        </div>
+
+        <div class="karte">
+          <h2>Gegessen</h2>
+          <p class="erklaerung">Alles, was je eingetragen wurde — gebündelt über den Barcode,
+             wo es einen gibt, sonst über Name und Marke. Häufigstes zuerst.</p>
           <div id="produkte-liste"></div>
+        </div>
+      </section>
+
+      <!-- Die Einkaufsliste ist der eine Teil, der zum Handy laeuft statt von
+           ihm her: geschrieben wird hier, abgehakt wird im Laden. -->
+      <section class="seite" id="seite-einkauf">
+        <div class="karte plankarte" id="plan-karte">
+          <h2>Von Claude schreiben lassen<span class="zusatz" id="plan-zusatz"></span></h2>
+          <p class="erklaerung">Der Stand des Tagebuchs geht mit — was zuletzt auf dem Teller
+             lag, wie oft, und das Tagesziel. Zurück kommen Posten mit Menge und Abteilung.
+             Preise kommen nicht vor: dieses Programm kennt das Tagebuch, nicht die Regale.</p>
+          <form class="eingabe" id="form-plan">
+            <textarea id="plan-text" rows="1" spellcheck="false"
+                      placeholder="Wunsch — „für drei Tage, viel Eiweiß, kein Schwein“. Leer lassen geht auch: dann entscheidet das Tagebuch."></textarea>
+            <button class="knopf haupt" id="plan-senden" type="submit">Schreiben</button>
+          </form>
+          <div class="vorschlaege" id="plan-vorschlaege"></div>
+          <label class="schalter"><input type="checkbox" id="plan-ergaenzen">
+            <span>Ergänzen statt ersetzen — die Liste unten bleibt stehen</span></label>
+          <p class="lage" id="plan-lage"></p>
+        </div>
+
+        <div class="karte">
+          <h2>Einkaufsliste<span class="zusatz" id="einkauf-zusatz"></span></h2>
+          <p class="erklaerung" id="einkauf-notiz" hidden></p>
+          <div id="einkauf-liste"></div>
+
+          <form class="neuform" id="form-posten">
+            <input name="name" placeholder="Was fehlt noch?" autocomplete="off" maxlength="80">
+            <input name="menge" type="number" min="0" step="0.5" inputmode="decimal" placeholder="1">
+            <select name="einheit" id="neu-einheit"></select>
+            <select name="gruppe" id="neu-gruppe"></select>
+            <button class="knopf" type="submit" title="Posten hinzufügen" aria-label="Posten hinzufügen"><svg width="14" height="14"><use href="#i-plus"/></svg></button>
+          </form>
+
+          <div class="schub" id="einkauf-schub"></div>
         </div>
       </section>
 

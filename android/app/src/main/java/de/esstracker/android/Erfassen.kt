@@ -133,7 +133,11 @@ fun ErfassenBildschirm(zustand: Zustand) {
         }
 
         if (zustand.treffer.isNotEmpty()) {
-            items(zustand.treffer, key = { it.barcode + it.name }) { treffer ->
+            // Eindeutig machen, bevor es Schluessel werden: dasselbe Produkt
+            // kann in der eigenen Datenbank und in Open Food Facts stehen, und
+            // ein doppelter Schluessel bringt die Liste zum Absturz.
+            val liste = zustand.treffer.distinctBy { it.quelle + "|" + it.barcode + "|" + it.name }
+            items(liste, key = { it.quelle + "|" + it.barcode + "|" + it.name }) { treffer ->
                 Trefferzeile(treffer) { zustand.gewaehlt = treffer }
             }
         }
@@ -161,11 +165,11 @@ private fun SelbstKarte(zustand: Zustand, auffaellig: Boolean) {
         )
         Text(
             if (auffaellig) {
-                "Trag es selbst ein — Name und Kilokalorien je 100 g genügen. " +
-                    "Der Eintrag geht genauso an den Rechner wie jeder andere."
+                "Trag es selbst ein — Name und Menge genügen. Die Nährwerte " +
+                    "schätzt Claude am Rechner und merkt sie sich für das nächste Mal."
             } else {
-                "Selbst Gekochtes hat keinen Strichcode. Name und Kilokalorien " +
-                    "je 100 g genügen, alles Weitere ist freiwillig."
+                "Selbst Gekochtes hat keinen Strichcode. Name und Menge genügen, " +
+                    "die Nährwerte schätzt Claude am Rechner."
             },
             fontSize = 12.5.sp, color = Gedaempft,
         )
@@ -223,7 +227,11 @@ private fun Trefferzeile(treffer: Datenbank.Treffer, tat: () -> Unit) {
             )
             Text(
                 buildString {
-                    if (treffer.marke.isNotEmpty()) append(treffer.marke)
+                    if (treffer.quelle == "eigen") append("eigene Datenbank · geschätzt")
+                    if (treffer.marke.isNotEmpty()) {
+                        if (isNotEmpty()) append(" · ")
+                        append(treffer.marke)
+                    }
                     if (treffer.menge.isNotEmpty()) {
                         if (isNotEmpty()) append(" · ")
                         append(treffer.menge)

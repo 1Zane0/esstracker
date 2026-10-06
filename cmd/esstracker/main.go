@@ -123,19 +123,29 @@ Umgebung:
 // Der Empfang darf scheitern, ohne das Programm mitzunehmen: ein belegter
 // Port 8790 heisst, dass kein Handy durchkommt — aber die Daten, die schon da
 // sind, soll man trotzdem ansehen koennen.
-func teile() (*tagebuch.Buch, *aufnahme.Dienst, *ki.Berater, error) {
+func teile() (*tagebuch.Buch, *aufnahme.Dienst, *ki.Berater, *ki.Schaetzer, *ki.Planer, error) {
 	buch, err := tagebuch.Oeffne()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	// Der Berater laedt nur seinen Verlauf; ob die claude-CLI ueberhaupt da
 	// ist, entscheidet sich erst bei der ersten Frage. Ein fehlendes
 	// Werkzeug soll das Tagebuch nicht am Starten hindern.
 	berater, err := ki.Oeffne(buch)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
-	return buch, aufnahme.Neu(buch, aufnahme.PortAus(empfangsadresse())), berater, nil
+	return buch, aufnahme.Neu(buch, aufnahme.PortAus(empfangsadresse())), berater,
+		ki.NeuerSchaetzer(buch), ki.NeuerPlaner(buch), nil
+}
+
+// schaetzenAn verdrahtet das Nachschaetzen: was vom Handy ohne Naehrwerte
+// kommt, schaetzt Claude von allein — und was schon wartet, weil der Rechner
+// aus war, gleich beim Start. Nur dort, wo das Programm dauerhaft laeuft:
+// `esstracker koppeln` soll nicht nebenbei Claude rufen.
+func schaetzenAn(e *aufnahme.Dienst, s *ki.Schaetzer) {
+	e.Offen = func() { s.Anstossen(false) }
+	s.Anstossen(false)
 }
 
 // empfangHoch oeffnet die Tuer ins Heimnetz — TCP fuer die Eintraege, UDP fuer
@@ -185,7 +195,7 @@ func programm() error {
 		return zeige(fenster.Oeffne("http://"+adr+"/", "Esstracker"))
 	}
 
-	buch, empfang, berater, err := teile()
+	buch, empfang, berater, schaetzer, planer, err := teile()
 	if err != nil {
 		return zeige(err)
 	}
@@ -194,9 +204,10 @@ func programm() error {
 		return zeige(fmt.Errorf("%s ist belegt: %w", adr, err))
 	}
 	server := &http.Server{
-		Handler:           web.Neu(buch, empfang, berater).Handler(),
+		Handler:           web.Neu(buch, empfang, berater, schaetzer, planer).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	schaetzenAn(empfang, schaetzer)
 	go func() {
 		if err := server.Serve(lauscher); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintln(os.Stderr, "Server: "+err.Error())
@@ -248,16 +259,17 @@ func erreichbar(adr string) bool {
 // ---------- Dienst ----------
 
 func dienst() error {
-	buch, empfang, berater, err := teile()
+	buch, empfang, berater, schaetzer, planer, err := teile()
 	if err != nil {
 		return err
 	}
 	adr := adresse()
 	server := &http.Server{
 		Addr:              adr,
-		Handler:           web.Neu(buch, empfang, berater).Handler(),
+		Handler:           web.Neu(buch, empfang, berater, schaetzer, planer).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	schaetzenAn(empfang, schaetzer)
 	ctx, halt := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer halt()
 
@@ -294,7 +306,11 @@ func heute() error {
 			continue
 		}
 		for _, r := range t.Zeilen {
-			fmt.Printf("  %s  %-34s %6.0f %-2s  %5d kcal\n", r.Uhr, kurz(r.Name, 34), r.Menge, r.Einheit, r.Kcal)
+			kcal := fmt.Sprintf("%5d", r.Kcal)
+			if r.Quelle == tagebuch.QuelleOffen {
+				kcal = "    ?" // noch nicht geschaetzt — eine 0 waere gelogen
+			}
+			fmt.Printf("  %s  %-34s %6.0f %-2s  %s kcal\n", r.Uhr, kurz(r.Name, 34), r.Menge, r.Einheit, kcal)
 		}
 	}
 	if z.Eintraege == 0 {
@@ -317,7 +333,7 @@ func kurz(s string, n int) string {
 // koppeln oeffnet das Fenster vom Terminal aus und wartet, bis ein Handy
 // durchkommt — der Weg fuer den Fall, dass gerade kein Fenster offen ist.
 func koppeln() error {
-	buch, empfang, _, err := teile()
+	buch, empfang, _, _, _, err := teile()
 	if err != nil {
 		return err
 	}
