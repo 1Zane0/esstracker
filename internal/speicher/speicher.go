@@ -17,17 +17,25 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 )
 
 // Ordner ist das Verzeichnis, in dem die Datei liegt. Es folgt der
 // XDG-Konvention, damit ein Backup des Home-Verzeichnisses sie mitnimmt.
+// Unter Windows ist das %APPDATA%\esstracker — der Ort, den dort ein Backup
+// des Benutzerprofils mitnimmt.
 func Ordner() string {
 	if p := os.Getenv("ESSTRACKER_DATEN"); p != "" {
 		return p
 	}
 	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
 		return filepath.Join(x, "esstracker")
+	}
+	if runtime.GOOS == "windows" {
+		if a := os.Getenv("APPDATA"); a != "" {
+			return filepath.Join(a, "esstracker")
+		}
 	}
 	heim, err := os.UserHomeDir()
 	if err != nil {

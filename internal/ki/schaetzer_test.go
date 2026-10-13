@@ -2,8 +2,10 @@ package ki
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -11,24 +13,69 @@ import (
 	"github.com/1Zane0/esstracker/internal/tagebuch"
 )
 
-// falschesClaude legt ein Skript namens claude vorne in den PATH. Es schreibt
+// falschesClaude legt ein Programm namens claude vorne in den PATH. Es schreibt
 // jeden Aufruf mit seinen Argumenten in eine eigene Datei und antwortet mit
 // dem, was `claude -p --output-format json --json-schema …` ausgibt.
+//
+// Das Programm ist dieses Testprogramm selbst, unter dem anderen Namen
+// abgelegt: ein Shell-Skript liesse sich unter Windows nicht starten. TestMain
+// erkennt an der Umgebung, dass es als claude gerufen wurde.
 func falschesClaude(t *testing.T, antwort string) (ordner string) {
 	t.Helper()
 	ordner = t.TempDir()
-	skript := `#!/usr/bin/env bash
-n=$(ls "` + ordner + `"/aufruf-* 2>/dev/null | wc -l)
-printf '%s\0' "$@" > "` + ordner + `/aufruf-$n"
-cat <<'ENDE'
-` + antwort + `
-ENDE
-`
-	if err := os.WriteFile(filepath.Join(ordner, "claude"), []byte(skript), 0o755); err != nil {
+	selbst, err := os.Executable()
+	if err != nil {
 		t.Fatal(err)
 	}
+	roh, err := os.ReadFile(selbst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "claude"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.WriteFile(filepath.Join(ordner, name), roh, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ordner, "antwort"), []byte(antwort+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(alsClaude, ordner)
 	t.Setenv("PATH", ordner+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return ordner
+}
+
+// alsClaude traegt den Ordner, in dem das falsche claude mitschreibt. Steht
+// die Variable, ist dieser Prozess nicht der Test, sondern das falsche claude.
+const alsClaude = "ESSTRACKER_TEST_ALS_CLAUDE"
+
+func TestMain(m *testing.M) {
+	if ordner := os.Getenv(alsClaude); ordner != "" {
+		os.Exit(spieleClaude(ordner))
+	}
+	os.Exit(m.Run())
+}
+
+func spieleClaude(ordner string) int {
+	frueher, _ := filepath.Glob(filepath.Join(ordner, "aufruf-*"))
+	var argumente bytes.Buffer
+	for _, a := range os.Args[1:] {
+		argumente.WriteString(a)
+		argumente.WriteByte(0)
+	}
+	ziel := filepath.Join(ordner, fmt.Sprintf("aufruf-%d", len(frueher)))
+	if err := os.WriteFile(ziel, argumente.Bytes(), 0o644); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	antwort, err := os.ReadFile(filepath.Join(ordner, "antwort"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	_, _ = os.Stdout.Write(antwort)
+	return 0
 }
 
 func aufrufe(t *testing.T, ordner string) [][]string {

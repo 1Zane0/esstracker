@@ -13,7 +13,8 @@ Laden steht kein Rechner.
 
 Aufbau bewusst wie [tasklist](../tasklist) und [wachturm](../wachturm): Go,
 WebKitGTK-Fenster, Oberfläche per `go:embed`, schwarz-weiß, dieselbe Schrift
-und dieselben Farbtoken. Die App ist auf dieselben Werte gesetzt.
+und dieselben Farbtoken. Die App ist auf dieselben Werte gesetzt. Unter
+[Windows](#windows) steht dasselbe Fenster auf WebView2.
 
 ## Zwei Türen
 
@@ -57,6 +58,9 @@ bin/einrichten.sh         # baut, legt nach ~/.local/bin, trägt den Starter ein
 bin/app-bauen.sh          # die Android-App; --installieren <seriennr> spielt sie auf
 ```
 
+Unter Windows dasselbe als Stapeldatei — `bin\bau.cmd` und `bin\einrichten.cmd`,
+siehe [Windows](#windows).
+
 **Die Oberfläche steckt im Binary.** Änderungen an `internal/web/dateien/`
 wirken erst nach `bin/bau.sh` — sonst sucht man den Fehler im Programm.
 
@@ -79,7 +83,8 @@ Umgebung: `ESSTRACKER_DATEN`, `ESSTRACKER_ADRESSE`, `ESSTRACKER_EMPFANG`.
 
 ## Daten
 
-`~/.local/share/esstracker/tagebuch.json` — eine Datei, atomar geschrieben
+`~/.local/share/esstracker/tagebuch.json` (unter Windows
+`%APPDATA%\esstracker\tagebuch.json`) — eine Datei, atomar geschrieben
 (erst daneben, dann umbenannt). Keine Datenbank: ein Eintrag ist knapp ein
 Kilobyte, und selbst ein Dutzend am Tag bleibt im Jahr bei wenigen Megabyte.
 
@@ -289,6 +294,50 @@ Strichcode des gescannten Produkts. Pflicht ist dort nur der Name.
 
 Was aufs Handy gehört, bleibt eine Woche liegen; was älter ist und beim
 Rechner angekommen, wird dort weggeräumt.
+
+## Windows
+
+Dasselbe Programm, dieselben Befehle, dieselben zwei Türen. Was anders ist:
+
+```bat
+bin\bau.cmd                 rem Programm mit Fenster -> esstracker.exe
+bin\bau.cmd --ohne-fenster  rem nur der Dienst
+bin\einrichten.cmd          rem baut, legt nach %LOCALAPPDATA%\Programs\esstracker,
+                            rem trägt den Eintrag ins Startmenü ein
+```
+
+- **Das Fenster ist WebView2**, die Laufzeit von Edge, die Windows 10 und 11
+  mitbringen. Die Bindung ist reines Go: gebaut wird ohne C-Compiler und ohne
+  cgo, `go build` genügt. WebKitGTK und `bin/pkgconfig` gelten nur für Linux.
+- **Daten** liegen in `%APPDATA%\esstracker`, der Zwischenspeicher des Fensters
+  getrennt davon in `%LOCALAPPDATA%\esstracker\WebView2` — im Datenordner liest
+  Claude mit, und dort hat er nichts zu suchen.
+- **Die Firewall fragt beim ersten Start**, ob das Programm ins Netz darf. Für
+  private Netzwerke erlauben; ohne das läuft die Oberfläche, aber das Handy
+  kommt nicht durch. Die Frage hängt am Pfad der exe.
+- **`claude` muss als `claude.exe` da sein** — über den Installer von claude.ai
+  oder über npm. Die Stapeldatei `claude.cmd`, die npm in den PATH legt, wird
+  umgangen: durch `cmd.exe` kämen Schema und Text nicht heil an. Gesucht wird
+  das Programm deshalb daneben im Paket (`bin\claude.exe`).
+- **Eine Befehlszeile endet unter Windows bei 32 767 Zeichen.** Systemtext,
+  Schema und Stand gehen als Argumente an `claude`; im Alltag sind das wenige
+  tausend Zeichen. Wer sehr viele offene Einträge auf einmal schätzen lässt,
+  bekommt hier eine Fehlermeldung statt einer Schätzung.
+- **Die exe ist ein Konsolenprogramm**, damit `esstracker heute` im Terminal
+  wartet und schreibt. Der Eintrag im Startmenü startet sie deshalb
+  verkleinert, und das Programm gibt die Konsole sofort zurück — sonst blitzte
+  bei jedem Start ein schwarzes Fenster auf. Ein Doppelklick auf die exe selbst
+  zeigt dieses Blitzen noch.
+- **Das Symbol** steckt als Ressource in der exe
+  (`cmd/esstracker/symbol_windows_amd64.syso`). Neu erzeugt wird sie aus
+  `symbol.ico`:
+
+  ```bat
+  go run github.com/akavel/rsrc@v0.10.2 -ico cmd\esstracker\symbol.ico -arch amd64 -o cmd\esstracker\symbol_windows_amd64.syso
+  ```
+
+`.gitattributes` hält die Zeilenenden auf LF. Git für Windows macht beim
+Auschecken sonst CRLF daraus, und ein Shell-Skript mit CRLF startet nicht.
 
 ## Belege
 

@@ -26,7 +26,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -110,7 +109,8 @@ func hilfe() {
   esstracker version     Fassung anzeigen
 
 Umgebung:
-  ESSTRACKER_DATEN     Datenverzeichnis (Vorgabe ~/.local/share/esstracker)
+  ESSTRACKER_DATEN     Datenverzeichnis (Vorgabe ~/.local/share/esstracker,
+                       unter Windows %APPDATA%/esstracker)
   ESSTRACKER_ADRESSE   Oberfläche (Vorgabe 127.0.0.1:8789)
   ESSTRACKER_EMPFANG   Empfang vom Handy (Vorgabe 0.0.0.0:8790)
 `)
@@ -189,6 +189,7 @@ func empfangHoch(e *aufnahme.Dienst, meckern bool) (zu func()) {
 // gegenseitig Eintraege ueberbuegeln. Ein Fenster mehr ist harmlos, ein
 // zweiter Schreiber nicht.
 func programm() error {
+	konsoleLoesen()
 	adr := adresse()
 
 	if erreichbar(adr) {
@@ -228,9 +229,9 @@ func programm() error {
 
 // zeige bringt ein Scheitern dorthin, wo es jemand sieht.
 //
-// Aus dmenu gestartet gibt es kein Terminal: eine Meldung auf stderr faellt
-// ins Leere, und das Programm sieht aus, als tue es einfach nichts. Dann ist
-// eine Schreibtisch-Benachrichtigung der einzige Weg nach draussen.
+// Aus dmenu oder dem Startmenue gestartet gibt es kein Terminal: eine Meldung
+// auf stderr faellt ins Leere, und das Programm sieht aus, als tue es einfach
+// nichts. Dann ist eine Benachrichtigung der einzige Weg nach draussen.
 func zeige(err error) error {
 	if err == nil {
 		return nil
@@ -239,9 +240,7 @@ func zeige(err error) error {
 	if i := strings.IndexByte(kurz, '\n'); i > 0 {
 		kurz = kurz[:i]
 	}
-	if pfad, suchfehler := exec.LookPath("notify-send"); suchfehler == nil {
-		_ = exec.Command(pfad, "-u", "critical", "Esstracker startet nicht", kurz).Run()
-	}
+	melde("Esstracker startet nicht", kurz)
 	return err
 }
 
@@ -384,61 +383,5 @@ func ausfuhr() error {
 	if err := schreiber.WriteAll(web.Tabelle(buch.Sicht())); err != nil {
 		return err
 	}
-	return nil
-}
-
-// ---------- Einrichten ----------
-
-// einrichten legt Starter und Symbol im Anwendungsmenue ab. Fuer dmenu_run
-// braucht es das nicht — das liest den PATH —, aber ein Programm ohne Eintrag
-// im Menue ist fuer jeden anderen Starter unsichtbar.
-func einrichten() error {
-	pfad, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	heim, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	ordner := heim + "/.local/share/applications"
-	if err := os.MkdirAll(ordner, 0o755); err != nil {
-		return err
-	}
-	symbolOrdner := heim + "/.local/share/icons/hicolor/scalable/apps"
-	if err := os.MkdirAll(symbolOrdner, 0o755); err != nil {
-		return err
-	}
-	symbol := `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="28" fill="#0A0A0B"/>
-  <path d="M40 30v30a12 12 0 0 0 24 0V30" stroke="#FAFAFA" stroke-width="7"
-        fill="none" stroke-linecap="round"/>
-  <path d="M52 30v68" stroke="#FAFAFA" stroke-width="7" stroke-linecap="round"/>
-  <path d="M88 30c-8 0-12 10-12 22s4 16 12 16" stroke="#FAFAFA" stroke-width="7"
-        fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M88 30v68" stroke="#FAFAFA" stroke-width="7" stroke-linecap="round"/>
-</svg>
-`
-	if err := os.WriteFile(symbolOrdner+"/esstracker.svg", []byte(symbol), 0o644); err != nil {
-		return err
-	}
-	starter := `[Desktop Entry]
-Type=Application
-Name=Esstracker
-GenericName=Ernährungstagebuch
-Comment=Was gegessen wurde, vom Handy auf diesen Rechner
-Exec=` + pfad + `
-Icon=esstracker
-Terminal=false
-Categories=Utility;Office;
-StartupNotify=true
-StartupWMClass=esstracker
-`
-	if err := os.WriteFile(ordner+"/esstracker.desktop", []byte(starter), 0o644); err != nil {
-		return err
-	}
-	fmt.Println("geschrieben: " + ordner + "/esstracker.desktop")
-	fmt.Println("geschrieben: " + symbolOrdner + "/esstracker.svg")
 	return nil
 }

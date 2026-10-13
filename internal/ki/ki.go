@@ -142,7 +142,7 @@ func Oeffne(b *tagebuch.Buch) (*Berater, error) {
 // Bereit sagt, ob ueberhaupt gefragt werden kann — und wenn nicht, warum. Das
 // gehoert ins Fenster, bevor jemand tippt, nicht in die Antwort danach.
 func Bereit() (bool, string) {
-	if _, err := exec.LookPath("claude"); err != nil {
+	if _, err := claudePfad(); err != nil {
 		return false, "Die claude-CLI ist nicht im PATH. Ohne sie gibt es hier niemanden zu fragen."
 	}
 	return true, ""
@@ -611,9 +611,14 @@ func ergebnisZeile(roh json.RawMessage) string {
 // Zeile mit, statt am Ende einen Klumpen einzusammeln: nur so kann das Fenster
 // zeigen, was gerade passiert, statt nur dass etwas passiert.
 func laufen(ctx context.Context, ordner string, aufZeile func([]byte), argumente ...string) error {
-	befehl := exec.CommandContext(ctx, "claude", argumente...)
+	pfad, err := claudePfad()
+	if err != nil {
+		return fmt.Errorf("claude liess sich nicht starten: %w", err)
+	}
+	befehl := exec.CommandContext(ctx, pfad, argumente...)
 	befehl.Dir = ordner
 	befehl.Stdin = nil
+	ohneKonsole(befehl)
 
 	rohr, err := befehl.StdoutPipe()
 	if err != nil {

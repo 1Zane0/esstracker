@@ -1,0 +1,11 @@
+# Im Repo und im Arbeitsverzeichnis LF. Git fuer Windows macht beim Auschecken
+# sonst CRLF daraus, und ein Shell-Skript mit CRLF startet nicht.
+* text=auto eol=lf
+
+# Stapeldateien sind die Ausnahme: cmd.exe verlaeuft sich bei LF in Sprungmarken.
+*.cmd text eol=crlf
+
+*.png binary
+*.ttf binary
+*.ico binary
+*.syso binary

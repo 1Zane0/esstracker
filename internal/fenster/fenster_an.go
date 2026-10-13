@@ -1,4 +1,4 @@
-//go:build !ohne_fenster
+//go:build !ohne_fenster && !windows
 
 // Package fenster oeffnet das Programmfenster.
 //
@@ -10,6 +10,8 @@
 //
 // Mit `-tags ohne_fenster` faellt dieser Weg weg; dann bleibt der Dienst, der
 // ohne Bildschirm laeuft.
+//
+// Unter Windows steht dasselbe Fenster auf WebView2 — siehe fenster_windows.go.
 package fenster
 
 import (
